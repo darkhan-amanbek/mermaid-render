@@ -46,7 +46,9 @@ const STYLE = `
   #zoom { min-width: 4.5em; text-align: center; font-variant-numeric: tabular-nums; color: var(--dim); }
   #stage { position: absolute; inset: 0; cursor: grab; touch-action: none; overflow: hidden; }
   #stage.dragging { cursor: grabbing; }
-  #canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+  /* The zoom sets the SVG's own width and height, so the browser draws the vectors afresh at
+     every scale; a CSS transform would scale a bitmap of the picture and blur it. */
+  #canvas { position: absolute; left: 0; top: 0; }
   #canvas svg { display: block; --bg: var(--page-bg); --fg: var(--page-fg); }
   #source { position: fixed; left: 0; right: 0; bottom: 0; max-height: 40vh; overflow: auto; margin: 0; padding: 12px 16px; background: var(--bar); border-top: 1px solid var(--line); font: 12px/1.5 var(--mono); white-space: pre; display: none; z-index: 2; }
   #source.shown { display: block; }
@@ -64,18 +66,25 @@ const SCRIPT = `
   let scale = 1, x = 0, y = 0
 
   const natural = () => {
+    if (natural.size) return natural.size
     const box = svg.viewBox && svg.viewBox.baseVal
     const w = parseFloat(svg.getAttribute('width')) || (box && box.width) || svg.getBoundingClientRect().width || 1
     const h = parseFloat(svg.getAttribute('height')) || (box && box.height) || svg.getBoundingClientRect().height || 1
-    return { w, h }
+    if (!svg.getAttribute('viewBox')) svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h)
+    natural.size = { w, h }
+    return natural.size
   }
   const room = () => {
     const bar = document.getElementById('bar').getBoundingClientRect().height
     const src = source.classList.contains('shown') ? source.getBoundingClientRect().height : 0
     return { top: bar, w: innerWidth, h: innerHeight - bar - src }
   }
+  const base = natural()
+  svg.setAttribute('preserveAspectRatio', 'xMinYMin meet')
   const apply = () => {
-    canvas.style.transform = 'translate(' + x + 'px,' + y + 'px) scale(' + scale + ')'
+    svg.setAttribute('width', String(base.w * scale))
+    svg.setAttribute('height', String(base.h * scale))
+    canvas.style.transform = 'translate(' + x + 'px,' + y + 'px)'
     zoomLabel.textContent = Math.round(scale * 100) + '%'
   }
   const center = (s) => {

@@ -7,12 +7,18 @@ This is a fork of [ceyeoh/mermaid-render](https://github.com/ceyeoh/mermaid-rend
 - In the desktop app, VS Code and the mobile app, the diagram is an SVG. Its colors follow the light or dark color scheme.
 - In the terminal, the diagram is drawn with Unicode box-drawing characters.
 
+## The diagram tool: a picture between paragraphs
+
+The mod registers a tool, `mcp__mermaid-render__diagram`, that takes a mermaid `source` and an optional `caption`. Claude calls it where a picture belongs; the call's row in the transcript is drawn as the picture, with the ⛶ button and the caption under it, and the text before and after the call stays the chat's own markdown. That is the way to get a diagram as an insert: a ```mermaid fence in a reply is drawn too, but the whole message block is then one drawing of the mod's, which VS Code frames and labels "From the mermaid-render plugin".
+
+The tool runs nothing and changes nothing, so the mod answers its permission check with allow. Its result tells the model whether the source drew, with the parse error when it did not. A diagram call that lands in a folded run of tool calls unfolds that run, so the picture shows.
+
 ## The viewer
 
 Under each drawn diagram there is one small button, **⛶** (as VS Code marks "maximize"). It writes the diagram to `$TMPDIR/mermaid-render/<id>.html` (with the SVG beside it) and opens that page: in a tab inside VS Code when the companion extension is installed (below), else in your default browser. The page holds the SVG inline and fetches nothing. On it:
 
 - a trackpad **pinch**, or **⌘ / Ctrl + scroll**, zooms around the pointer; a two-finger **scroll** or a **drag** pans;
-- **−** / **+**, **1:1** and **Fit** on the toolbar, and the keys `-`, `+`, `1`, `0`; a **double-click** toggles between fit and natural size;
+- **−** / **+**, **1:1** and **Fit** on the toolbar, and the keys `-`, `+`, `1`, `0`; a **double-click** toggles between fit and natural size. The zoom sets the SVG's own size, so the picture is redrawn from its vectors at every scale and stays sharp;
 - **Source** (key `s`) shows the mermaid text, **Copy** copies it, **Download** saves the SVG;
 - inside VS Code the page takes the editor's colors, button colors and fonts from the current theme; in a browser it follows the system's light or dark scheme.
 
@@ -32,7 +38,7 @@ In the chat itself the diagram draws at its own size: a small diagram is never s
 
 ## What the model is told
 
-The mod adds one section to the end of the system prompt, `mermaid-render:diagrams`, so that Claude knows a mermaid block is drawn and uses one well: where a picture says more than prose, only the kinds this mod draws, a few words per node, about 15 nodes at most, and always as an insert within an ordinary markdown reply rather than as the whole answer. The text is `DIAGRAM_GUIDANCE` in `hooks/register.tsx`; edit it there to change the house style.
+The mod adds one section to the end of the system prompt, `mermaid-render:diagrams`, so that Claude reaches for the diagram tool and uses it well: where a picture says more than prose, only the kinds this mod draws, a few words per node, about 15 nodes at most, and always as an insert within an ordinary markdown reply rather than as the whole answer. The text is `DIAGRAM_GUIDANCE` in `hooks/register.tsx`; edit it there to change the house style. In a session under a Team or Enterprise login, Claude Code's built-in guard passes the prompt events over user-installed mods, so the section does not reach the model there; put the same rules in `~/.claude/CLAUDE.md` instead. The tool's own description reaches the model either way.
 
 ## The frame around a reply
 

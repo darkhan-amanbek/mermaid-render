@@ -166,11 +166,27 @@ function toBlocks(segments: Segment[], rendered: Rendered[]): Block[] {
   return blocks
 }
 
+// The tool the model calls to put a diagram between its paragraphs. Its row in the transcript
+// is the picture; the prose around it stays the chat's own markdown, outside any plugin frame.
+const TOOL = 'mcp__mermaid-render__diagram'
+const TOOL_DESCRIPTION = `Draws a mermaid diagram as a picture in the chat, as its own row between your paragraphs. Prefer this over a \`\`\`mermaid code block: the text before and after stays ordinary markdown, and the picture gets a ⛶ button that opens it large with zoom.
+
+Use it where a picture says more than prose: a flow with branches, a sequence of calls between services, a state machine, a data model. Most replies need no diagram; one that does usually needs one. Drawn kinds: flowchart / graph, sequenceDiagram, stateDiagram-v2, classDiagram, erDiagram; any other kind is refused. Keep it readable at a glance: about 15 nodes or 12 messages at most, a few words per node; introduce it with a sentence before the call and go on with the text after. The result says whether it drew, with the parse error when it did not, so you can fix the source and call again.`
+const TOOL_INPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    source: { type: 'string', description: 'The mermaid source, without the code fence.' },
+    caption: { type: 'string', description: 'One short line drawn under the picture; optional.' },
+  },
+  required: ['source'],
+  additionalProperties: false,
+}
+
 // What the model is told about diagrams, as a section at the end of the system prompt: when a
 // picture earns its place, which kinds draw, and that a diagram is an insert within prose.
 export const DIAGRAM_GUIDANCE = `# Diagrams
 
-A fenced \`\`\`mermaid block in your reply is drawn as a picture in the chat, with a ⛶ button that opens it large with zoom. Use that where a picture says more than prose: a flow with branches, a sequence of calls between services, a state machine, a data model. Most replies need no diagram; one that does usually needs exactly one.
+To put a diagram in a reply, call the \`mcp__mermaid-render__diagram\` tool with the mermaid source: its row is drawn as a picture between your paragraphs, with a ⛶ button that opens it large with zoom, and the text around it stays ordinary markdown. A fenced \`\`\`mermaid block is drawn too, but it frames the whole message, so prefer the tool. Use a diagram where a picture says more than prose: a flow with branches, a sequence of calls between services, a state machine, a data model. Most replies need no diagram; one that does usually needs exactly one.
 
 Rules:
 - A diagram is an insert within an ordinary markdown reply, never its container. Headings, lists, explanations and code stay as markdown text around it; node labels hold a few words, not sentences.
@@ -180,6 +196,48 @@ Rules:
 - Write the block only once it is complete; a diagram that fails to parse stays a code block.`
 
 export const register: Register = on => {
+  on('session.start', async ($, e, next) => {
+    await $.tool.register({ name: 'diagram', description: TOOL_DESCRIPTION, inputSchema: TOOL_INPUT_SCHEMA, isDeferred: false })
+    return next(e)
+  })
+
+  // Drawing a picture runs nothing and changes nothing, so the call needs no dialog.
+  on('tool.check', { tool: TOOL }, () => ({ decision: 'allow', reason: 'draws a diagram in the chat' }))
+
+  on('tool.call', { tool: TOOL }, async ($, e) => {
+    const source = typeof e.source === 'string' ? e.source.trim() : ''
+    if (source === '') return { result: { isDrawn: false, reason: 'source is empty' } }
+    // Drawn as SVG to check that it parses; the surface's own format is drawn when the row shows.
+    const [rendered] = await renderAll($, 'svg', [source])
+    if (rendered?.ok !== true) return { result: { isDrawn: false, reason: rendered?.reason ?? 'not rendered' } }
+    return { result: { isDrawn: true, kind: source.split('\n')[0]?.trim() ?? '' } }
+  })
+
+  on('ui.render', { component: 'ToolUse', props: { tool: TOOL } }, async ($, e, next) => {
+    const input = e.props.input as { source?: unknown; caption?: unknown } | undefined
+    const source = typeof input?.source === 'string' ? input.source.trim() : ''
+    if (e.props.isRunning || e.props.isErrored || e.props.isInterrupted || source === '') return next(e)
+    const format = FORMAT_BY_SURFACE[e.surface]
+    const [rendered] = await renderAll($, format, [source])
+    if (rendered?.ok !== true || !FITS[format](rendered.output, e.viewport)) return next(e)
+    const alt = source.split('\n')[0]?.trim() || 'mermaid diagram'
+    const diagram: Diagram = { kind: 'diagram', id: diagramId(source), index: 0, source, output: rendered.output, alt, size: sizeOf(rendered.output) }
+    const caption = typeof input?.caption === 'string' && input.caption.trim() !== '' ? input.caption.trim() : undefined
+    return drawToolDiagram($, e, diagram, caption)
+  }).catch(($, e, next) => next(e))
+
+  // The result block under the row would show the call's record; the picture is the row.
+  on('ui.render', { component: 'ToolResult', props: { tool: TOOL } }, ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+
+  // A diagram call that lands in a folded run of tool calls would be hidden in its count line.
+  on('ui.render', { component: 'ToolGroup' }, ($, e, next) => {
+    if (e.props.isExpanded || !e.props.calls.some(call => call.tool === TOOL)) return next(e)
+    return next({ ...e, props: { ...e.props, isExpanded: true } })
+  })
+
   on('prompt.compose', async ($, e, next) => {
     const { sections } = await next(e)
     return { sections: [...sections, { id: 'mermaid-render:diagrams', text: DIAGRAM_GUIDANCE, scope: 'session' }] }
@@ -244,6 +302,30 @@ function diagramDrawer($: EngineInterface, e: RenderInput<'AssistantMessage'>): 
       </Box>
     )
   }
+}
+
+function drawToolDiagram($: EngineInterface, e: RenderInput<'ToolUse'>, diagram: Diagram, caption: string | undefined): RenderElement {
+  const { Box, Text } = $.ui.resolve(e)
+  if (e.surface === 'terminal') {
+    const { Code } = $.ui.resolve(e)
+    return (
+      <Box flexDirection="column">
+        <Code source={diagram.output} wrap="truncate-end" />
+        {caption !== undefined && <Text dimColor>{caption}</Text>}
+      </Box>
+    )
+  }
+  const { Button, Svg } = $.ui.resolve(e)
+  const natural = diagram.size === undefined ? {} : { width: diagram.size.width, height: diagram.size.height }
+  return (
+    <Box flexDirection="column">
+      <Svg source={diagram.output} alt={diagram.alt} isInteractive={e.surface === 'desktop'} {...natural} />
+      <Box flexDirection="row" gap={1}>
+        <Button key={`view:${diagram.id}:0`} label="⛶" onPress={() => openViewer($, diagram)} />
+        {caption !== undefined && <Text dimColor>{caption}</Text>}
+      </Box>
+    </Box>
+  )
 }
 
 function drawBlocks($: EngineInterface, e: RenderInput<'AssistantMessage'>, blocks: Block[]): RenderElement {

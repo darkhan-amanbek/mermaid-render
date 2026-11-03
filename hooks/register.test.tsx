@@ -285,3 +285,101 @@ test('the system prompt ends with a session section telling the model how to use
   expect(sections[1]?.text).toContain('sequenceDiagram')
   expect(sections[1]?.text).toContain('never its container')
 })
+
+const TOOL = 'mcp__mermaid-render__diagram'
+const toolRow = (source: string, extra: Record<string, unknown> = {}) => ({
+  plugin: 'mermaid-render',
+  component: 'ToolUse',
+  requestId: 'call-1',
+  props: { tool_use_id: 'call-1', tool: TOOL, input: { source, ...extra }, isRunning: false, isErrored: false, isInterrupted: false, output: { isDrawn: true } },
+}) as const
+
+test('session.start registers the diagram tool, listed in the prompt from the start', async ($, on) => {
+  const registered: { name: string; isDeferred?: unknown }[] = []
+  on('tool.register', (_, e) => {
+    registered.push({ name: e.name, isDeferred: e.isDeferred })
+    return { value: { tool: TOOL } }
+  })
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/', surface: 'vscode', isInteractive: true })
+  expect(registered).toEqual([{ name: 'diagram', isDeferred: false }])
+})
+
+test('the diagram tool answers whether the source drew, with the parse error when it did not', async ($, on) => {
+  const renderer = fakeRenderer(on)
+  const drawn = await $.tool.call({ tool: TOOL, source: FLOW })
+  expect(drawn.result).toEqual({ isDrawn: true, kind: 'graph TD' })
+  const refused = await $.tool.call({ tool: TOOL, source: PIE })
+  expect(refused.result).toEqual({ isDrawn: false, reason: 'Invalid mermaid header' })
+  const empty = await $.tool.call({ tool: TOOL, source: '  ' })
+  expect(empty.result).toEqual({ isDrawn: false, reason: 'source is empty' })
+  expect(renderer.renderCalls).toEqual([[FLOW], [PIE]])
+})
+
+test('the diagram tool needs no permission dialog', async ($, on) => {
+  const { decision } = await $.tool.check({ tool: TOOL, input: { source: FLOW } })
+  expect(decision).toBe('allow')
+})
+
+test("the tool's row is the picture with a ⛶ button and the caption; its result block is empty", async ($, on) => {
+  fakeRenderer(on)
+  for (const surface of ['desktop', 'vscode'] as const) {
+    const ui = await $.ui.mount({ ...toolRow(FLOW, { caption: 'Order flow' }), surface })
+    const svg = await ui.find({ type: 'Svg' })
+    expect(svg?.props.source).toBe(svgOf(FLOW))
+    expect(svg?.props.width).toBe(300)
+    expect(await ui.find({ type: 'Button', key: `view:${diagramId(FLOW)}:0` })).toBeDefined()
+    expect((await ui.find({ type: 'Text', text: /Order flow/ }))?.text).toBe('Order flow')
+    await ui.unmount()
+  }
+  const result = await $.ui.mount({
+    plugin: 'mermaid-render',
+    component: 'ToolResult',
+    requestId: 'call-1',
+    props: { tool_use_id: 'call-1', tool: TOOL, output: { isDrawn: true }, isErrored: false },
+    surface: 'vscode',
+  })
+  expect(await result.find({ type: 'Text' })).toBeUndefined()
+  expect(await result.find({ type: 'Svg' })).toBeUndefined()
+  await result.unmount()
+})
+
+test("on the terminal the tool's row is the box-drawing text", async ($, on) => {
+  fakeRenderer(on)
+  const ui = await $.ui.mount({ ...toolRow(SEQUENCE), surface: 'terminal', viewport: { columns: 80, rows: 24 } })
+  expect((await ui.find({ type: 'Code' }))?.props.source).toBe(asciiOf(SEQUENCE))
+  await ui.unmount()
+})
+
+test("a running, errored or unparseable diagram call keeps the engine's own row", async ($, on) => {
+  fakeRenderer(on)
+  const running = await $.ui.mount({ ...toolRow(FLOW), props: { ...toolRow(FLOW).props, isRunning: true, output: undefined }, surface: 'vscode' })
+  expect(await running.find({ type: 'Text', text: 'engine' })).toBeDefined()
+  await running.unmount()
+  const pie = await $.ui.mount({ ...toolRow(PIE), surface: 'vscode' })
+  expect(await pie.find({ type: 'Text', text: 'engine' })).toBeDefined()
+  expect(await pie.find({ type: 'Svg' })).toBeUndefined()
+  await pie.unmount()
+})
+
+test('a folded run of tool calls that holds a diagram call is unfolded into rows', async ($, on) => {
+  const seen: boolean[] = []
+  on('ui.render', ($, e) => {
+    if (e.component === 'ToolGroup') seen.push(e.props.isExpanded)
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+  const call = (tool: string) => ({ tool_use_id: tool, tool, input: {}, isRunning: false, isErrored: false, isInterrupted: false })
+  const group = (calls: ReturnType<typeof call>[]) => ({
+    plugin: 'mermaid-render',
+    component: 'ToolGroup',
+    requestId: 'group-1',
+    props: { calls, isActive: false, isExpanded: false },
+    surface: 'vscode',
+  }) as const
+  const plain = await $.ui.mount(group([call('Read'), call('Grep')]))
+  await plain.unmount()
+  const withDiagram = await $.ui.mount(group([call('Read'), call(TOOL)]))
+  await withDiagram.unmount()
+  expect(seen).toEqual([false, true])
+})
