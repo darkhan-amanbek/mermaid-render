@@ -291,7 +291,7 @@ const toolRow = (source: string, extra: Record<string, unknown> = {}) => ({
   plugin: 'mermaid-render',
   component: 'ToolUse',
   requestId: 'call-1',
-  props: { tool_use_id: 'call-1', tool: TOOL, input: { source, ...extra }, isRunning: false, isErrored: false, isInterrupted: false, output: { isDrawn: true } },
+  props: { tool_use_id: 'call-1', tool: TOOL, input: { source, ...extra }, isRunning: false, isErrored: false, isInterrupted: false, output: 'Drawn: graph TD.' },
 }) as const
 
 test('session.start registers the diagram tool, listed in the prompt from the start', async ($, on) => {
@@ -308,11 +308,11 @@ test('session.start registers the diagram tool, listed in the prompt from the st
 test('the diagram tool answers whether the source drew, with the parse error when it did not', async ($, on) => {
   const renderer = fakeRenderer(on)
   const drawn = await $.tool.call({ tool: TOOL, source: FLOW })
-  expect(drawn.result).toEqual({ isDrawn: true, kind: 'graph TD' })
+  expect(drawn.result).toBe('Drawn: graph TD. Go on with the text after it.')
   const refused = await $.tool.call({ tool: TOOL, source: PIE })
-  expect(refused.result).toEqual({ isDrawn: false, reason: 'Invalid mermaid header' })
+  expect(refused.result).toBe('Not drawn: Invalid mermaid header. Fix the source and call again.')
   const empty = await $.tool.call({ tool: TOOL, source: '  ' })
-  expect(empty.result).toEqual({ isDrawn: false, reason: 'source is empty' })
+  expect(empty.result).toBe('Not drawn: the source is empty.')
   expect(renderer.renderCalls).toEqual([[FLOW], [PIE]])
 })
 
@@ -336,7 +336,7 @@ test("the tool's row is the picture with a ⛶ button and the caption; its resul
     plugin: 'mermaid-render',
     component: 'ToolResult',
     requestId: 'call-1',
-    props: { tool_use_id: 'call-1', tool: TOOL, output: { isDrawn: true }, isErrored: false },
+    props: { tool_use_id: 'call-1', tool: TOOL, output: 'Drawn: graph TD.', isErrored: false },
     surface: 'vscode',
   })
   expect(await result.find({ type: 'Text' })).toBeUndefined()

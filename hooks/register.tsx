@@ -205,12 +205,13 @@ export const register: Register = on => {
   on('tool.check', { tool: TOOL }, () => ({ decision: 'allow', reason: 'draws a diagram in the chat' }))
 
   on('tool.call', { tool: TOOL }, async ($, e) => {
+    // The result is the text the model reads: a plugin tool's result is a string.
     const source = typeof e.source === 'string' ? e.source.trim() : ''
-    if (source === '') return { result: { isDrawn: false, reason: 'source is empty' } }
+    if (source === '') return { result: 'Not drawn: the source is empty.' }
     // Drawn as SVG to check that it parses; the surface's own format is drawn when the row shows.
     const [rendered] = await renderAll($, 'svg', [source])
-    if (rendered?.ok !== true) return { result: { isDrawn: false, reason: rendered?.reason ?? 'not rendered' } }
-    return { result: { isDrawn: true, kind: source.split('\n')[0]?.trim() ?? '' } }
+    if (rendered?.ok !== true) return { result: `Not drawn: ${rendered?.reason ?? 'not rendered'}. Fix the source and call again.` }
+    return { result: `Drawn: ${source.split('\n')[0]?.trim() ?? ''}. Go on with the text after it.` }
   })
 
   on('ui.render', { component: 'ToolUse', props: { tool: TOOL } }, async ($, e, next) => {
