@@ -45,17 +45,26 @@ function activate(context) {
     panel.webview.onDidReceiveMessage(message => handle(real, message))
     panel.onDidDispose(() => {
       panels.delete(real)
-      if (maximized.delete(panel) && maximized.size === 0) void vscode.commands.executeCommand('workbench.action.toggleMaximizeEditorGroup')
+      if (maximized.delete(panel) && maximized.size === 0) restoreLayout()
     })
     panels.set(real, panel)
-    // Take the whole editor area, so the picture is not squeezed beside the chat; the toggle
-    // runs again when the last viewer closes, which puts the layout back.
-    if (vscode.workspace.getConfiguration('mermaidViewer').get('maximize', true) && maximized.size === 0) {
-      maximized.add(panel)
-      void vscode.commands.executeCommand('workbench.action.toggleMaximizeEditorGroup')
-    } else if (maximized.size > 0) {
+    if (vscode.workspace.getConfiguration('mermaidViewer').get('maximize', true)) {
+      if (maximized.size === 0) takeWholeWindow()
       maximized.add(panel)
     }
+  }
+
+  // The viewer takes the whole window: its editor group is maximized over the others, and the
+  // Claude Code chat, when it sits in the secondary side bar, is hidden. The last viewer to close
+  // puts both back.
+  const chatInSideBar = () => vscode.workspace.getConfiguration('claudeCode').get('preferredLocation') === 'sidebar'
+  const takeWholeWindow = () => {
+    void vscode.commands.executeCommand('workbench.action.toggleMaximizeEditorGroup')
+    if (chatInSideBar()) void vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar')
+  }
+  const restoreLayout = () => {
+    void vscode.commands.executeCommand('workbench.action.toggleMaximizeEditorGroup')
+    if (chatInSideBar()) void vscode.commands.executeCommand('workbench.action.focusAuxiliaryBar')
   }
 
   const handle = async (file, message) => {
