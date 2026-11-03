@@ -57,18 +57,10 @@ function activate(context) {
     }
   }
 
-  // The viewer takes the whole window: its editor group is maximized over the others, and the
-  // Claude Code chat, when it sits in the secondary side bar, is hidden. The last viewer to close
-  // puts both back.
-  const chatInSideBar = () => vscode.workspace.getConfiguration('claudeCode').get('preferredLocation') === 'sidebar'
-  const takeWholeWindow = () => {
-    void vscode.commands.executeCommand('workbench.action.toggleMaximizeEditorGroup')
-    if (chatInSideBar()) void vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar')
-  }
-  const restoreLayout = () => {
-    void vscode.commands.executeCommand('workbench.action.toggleMaximizeEditorGroup')
-    if (chatInSideBar()) void vscode.commands.executeCommand('workbench.action.focusAuxiliaryBar')
-  }
+  // The viewer takes the whole editor area: its group is maximized over the other editor
+  // groups. The chat in the side bar stays. The last viewer to close puts the groups back.
+  const takeWholeWindow = () => void vscode.commands.executeCommand('workbench.action.toggleMaximizeEditorGroup')
+  const restoreLayout = () => void vscode.commands.executeCommand('workbench.action.toggleMaximizeEditorGroup')
 
   const handle = async (file, message) => {
     if (message?.type === 'copy' && typeof message.text === 'string') {

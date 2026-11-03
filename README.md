@@ -21,7 +21,7 @@ Under each drawn diagram there is one button, **⤢ View**. It writes the diagra
 The Claude Code extension draws an SVG as a static image and passes no wheel or pinch to a mod, and the mods API has no modal dialog of its own, so the viewer is a page. To have it open as a tab beside the chat, install the small companion extension from [`vscode-extension/`](vscode-extension/):
 
 ```bash
-code --install-extension vscode-extension/mermaid-viewer-0.4.0.vsix
+code --install-extension vscode-extension/mermaid-viewer-0.5.0.vsix
 ```
 
 With it installed, ⤢ View runs `code --open-url vscode://darkhan-amanbek.mermaid-viewer/open?path=<page>` and the extension shows the page in a webview panel. VS Code asks once whether the extension may open the URI; tick "Do not ask me again". The extension opens only pages under `<os temp dir>/mermaid-render/`.

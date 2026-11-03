@@ -2,7 +2,7 @@
   "name": "mermaid-viewer",
   "displayName": "Mermaid Viewer for Claude Code",
   "description": "Opens the diagram viewer pages that the mermaid-render Claude Code mod writes, as a webview tab inside VS Code: pinch-zoom, wheel zoom, drag, source, save.",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "darkhan-amanbek",
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/darkhan-amanbek/mermaid-render" },
@@ -21,7 +21,7 @@
         "mermaidViewer.maximize": {
           "type": "boolean",
           "default": true,
-          "description": "When a viewer opens, maximize its editor group and hide the Claude Code chat if it sits in the secondary side bar, so the diagram takes the whole window; the layout is restored when the last viewer closes."
+          "description": "Maximize the editor group when a viewer opens, so the diagram takes the whole editor area beside the chat; the groups are restored when the last viewer closes."
         }
       }
     }
