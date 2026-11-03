@@ -9,9 +9,11 @@ When it is installed, the mod's **⤢ View** button opens the diagram beside the
 ```bash
 cd vscode-extension
 npx -y @vscode/vsce package
-code --install-extension mermaid-viewer-0.1.0.vsix
+code --install-extension mermaid-viewer-0.2.0.vsix
 ```
 
 ## How it works
 
 The mod opens `vscode://darkhan-amanbek.mermaid-viewer/open?path=<page>`. The extension loads that page into a webview panel with scripts on. Only pages under `<os temp dir>/mermaid-render/` are opened, since any program can open such a URI. The command **Mermaid Viewer: Open a viewer page…** opens one by hand.
+
+The viewer maximizes its editor group so the diagram takes the whole editor area, and restores the layout when the last viewer tab closes. Turn that off with the setting `mermaidViewer.maximize`.

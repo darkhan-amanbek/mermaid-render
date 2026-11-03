@@ -12,6 +12,8 @@ const PAGES_DIR = path.join(fs.realpathSync(os.tmpdir()), 'mermaid-render')
 
 function activate(context) {
   const panels = new Map()
+  // The viewer panels opened while the editor group is maximized by this extension.
+  const maximized = new Set()
 
   const open = file => {
     if (typeof file !== 'string' || file === '') return warn('no page named')
@@ -41,8 +43,19 @@ function activate(context) {
     })
     panel.webview.html = html
     panel.webview.onDidReceiveMessage(message => handle(real, message))
-    panel.onDidDispose(() => panels.delete(real))
+    panel.onDidDispose(() => {
+      panels.delete(real)
+      if (maximized.delete(panel) && maximized.size === 0) void vscode.commands.executeCommand('workbench.action.toggleMaximizeEditorGroup')
+    })
     panels.set(real, panel)
+    // Take the whole editor area, so the picture is not squeezed beside the chat; the toggle
+    // runs again when the last viewer closes, which puts the layout back.
+    if (vscode.workspace.getConfiguration('mermaidViewer').get('maximize', true) && maximized.size === 0) {
+      maximized.add(panel)
+      void vscode.commands.executeCommand('workbench.action.toggleMaximizeEditorGroup')
+    } else if (maximized.size > 0) {
+      maximized.add(panel)
+    }
   }
 
   const handle = async (file, message) => {
