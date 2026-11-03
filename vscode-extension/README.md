@@ -2,7 +2,7 @@
 
 A small VS Code extension that shows the viewer pages written by the [mermaid-render](https://github.com/darkhan-amanbek/mermaid-render) Claude Code mod as a tab inside VS Code, instead of in the browser.
 
-When it is installed, the mod's **⤢ View** button opens the diagram beside the chat, with trackpad pinch-zoom, wheel zoom, drag to pan, the mermaid source, copy and save. Without it, the mod opens the same page in the browser.
+When it is installed, the mod's **⛶** button opens the diagram beside the chat, with trackpad pinch-zoom, wheel zoom, drag to pan, the mermaid source, copy and save. Without it, the mod opens the same page in the browser.
 
 ## Install
 

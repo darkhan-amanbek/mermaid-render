@@ -190,19 +190,21 @@ test('with no runtime at all, diagrams stay code and one debug line says why', a
   expect(renderer.logs[0]).toContain('no node or bun')
 })
 
-test('a diagram draws at its own size with one ⤢ View button under it', async ($, on) => {
+test('a diagram draws at its own size with one ⛶ button under it', async ($, on) => {
   fakeRenderer(on)
   for (const surface of ['desktop', 'vscode'] as const) {
     const ui = await $.ui.mount({ ...message(fence(FLOW)), surface })
     const svg = await ui.find({ type: 'Svg' })
     expect(svg?.props.width).toBe(300)
     expect(svg?.props.height).toBe(200)
-    expect((await ui.findAll({ type: 'Button' })).map(button => button.props.key)).toEqual([`view:${diagramId(FLOW)}:0`])
+    const buttons = await ui.findAll({ type: 'Button' })
+    expect(buttons.map(button => button.props.key)).toEqual([`view:${diagramId(FLOW)}:0`])
+    expect(buttons[0]?.props.label).toBe('⛶')
     await ui.unmount()
   }
 })
 
-test('⤢ View writes the SVG and a viewer page to the temp folder and opens the page in the browser', async ($, on) => {
+test('⛶ writes the SVG and a viewer page to the temp folder and opens the page in the browser', async ($, on) => {
   const renderer = fakeRenderer(on, { openers: ['open'], extensions: ['ms-python.python'] })
   on('env.get', () => ({ value: '/tmp/t/' }))
   const writes: { path: string; text: string }[] = []
@@ -226,7 +228,7 @@ test('⤢ View writes the SVG and a viewer page to the temp folder and opens the
   await ui.unmount()
 })
 
-test('with the viewer extension installed, ⤢ View opens the page in VS Code through its URI, not the browser', async ($, on) => {
+test('with the viewer extension installed, ⛶ opens the page in VS Code through its URI, not the browser', async ($, on) => {
   const renderer = fakeRenderer(on, { openers: ['open'], extensions: ['ms-python.python', 'darkhan-amanbek.mermaid-viewer'] })
   on('env.get', () => ({ value: '/tmp/t' }))
   on('fs.write', () => ({ value: undefined }))

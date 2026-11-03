@@ -221,9 +221,7 @@ function diagramDrawer($: EngineInterface, e: RenderInput<'AssistantMessage'>): 
       <Box flexDirection="column">
         <Svg source={output} alt={alt} isInteractive={e.surface === 'desktop'} {...natural} />
         <Box flexDirection="row">
-          <Button key={`view:${id}:${index}`} onPress={() => openViewer($, diagram)}>
-            ⤢ View
-          </Button>
+          <Button key={`view:${id}:${index}`} label="⛶" onPress={() => openViewer($, diagram)} />
         </Box>
       </Box>
     )

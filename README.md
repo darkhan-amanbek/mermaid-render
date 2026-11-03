@@ -9,7 +9,7 @@ This is a fork of [ceyeoh/mermaid-render](https://github.com/ceyeoh/mermaid-rend
 
 ## The viewer
 
-Under each drawn diagram there is one button, **⤢ View**. It writes the diagram to `$TMPDIR/mermaid-render/<id>.html` (with the SVG beside it) and opens that page: in a tab inside VS Code when the companion extension is installed (below), else in your default browser. The page holds the SVG inline and fetches nothing. On it:
+Under each drawn diagram there is one small button, **⛶** (as VS Code marks "maximize"). It writes the diagram to `$TMPDIR/mermaid-render/<id>.html` (with the SVG beside it) and opens that page: in a tab inside VS Code when the companion extension is installed (below), else in your default browser. The page holds the SVG inline and fetches nothing. On it:
 
 - a trackpad **pinch**, or **⌘ / Ctrl + scroll**, zooms around the pointer; a two-finger **scroll** or a **drag** pans;
 - **−** / **+**, **1:1** and **Fit** on the toolbar, and the keys `-`, `+`, `1`, `0`; a **double-click** toggles between fit and natural size;
@@ -24,7 +24,7 @@ The Claude Code extension draws an SVG as a static image and passes no wheel or 
 code --install-extension vscode-extension/mermaid-viewer-0.5.0.vsix
 ```
 
-With it installed, ⤢ View runs `code --open-url vscode://darkhan-amanbek.mermaid-viewer/open?path=<page>` and the extension shows the page in a webview panel. VS Code asks once whether the extension may open the URI; tick "Do not ask me again". The extension opens only pages under `<os temp dir>/mermaid-render/`.
+With it installed, ⛶ runs `code --open-url vscode://darkhan-amanbek.mermaid-viewer/open?path=<page>` and the extension shows the page in a webview panel. VS Code asks once whether the extension may open the URI; tick "Do not ask me again". The extension opens only pages under `<os temp dir>/mermaid-render/`.
 
 Without the extension, the page opens with `open` on macOS, `xdg-open` on Linux and `start` on Windows; when none starts, a toast names the file.
 
@@ -74,7 +74,7 @@ The renderer runs as a separate process, because its bundle is larger than a hoo
 - To find a runtime, it runs each candidate with `--version` until one starts. It does this once per session.
 - A diagram already drawn comes from an in-memory cache of up to 256 entries. The cache is gone when Claude Code exits.
 - The renderer makes no network requests, reads no files besides its own code, and writes nothing to disk. Nothing leaves your machine.
-- The only write to disk is the **⤢ View** button, which saves that one diagram's SVG and viewer page under `$TMPDIR/mermaid-render/` before opening the page.
+- The only write to disk is the **⛶** button, which saves that one diagram's SVG and viewer page under `$TMPDIR/mermaid-render/` before opening the page.
 - beautiful-mermaid's SVG asks for Google Fonts through a CSS `@import`. The renderer strips that line, and it throws away any SVG that still references a URL other than the SVG namespace, so a drawn diagram never fetches anything.
 
 ## Vendored code
