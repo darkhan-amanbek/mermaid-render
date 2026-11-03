@@ -1,15 +1,8 @@
-// How a drawn diagram is viewed: its zoom and whether its source shows.
-// Pure helpers, so the tests and the hooks module share one idea of them.
+// Pure helpers over a drawn diagram, shared by the hooks module and the tests.
 
 export type Size = { width: number; height: number }
 
-/** Zoom factors the toolbar steps through; 1 is the drawing's own size. */
-export const ZOOMS = [0.5, 0.67, 0.8, 1, 1.25, 1.5, 2, 3] as const
-
-/** The zoom that lets the surface fit the drawing to its slot. */
-export const FIT = 0
-
-/** A short stable id of a diagram's source, for state keys and Button keys. */
+/** A short stable id of a diagram's source, for file names and Button keys. */
 export function diagramId(source: string): string {
   let hash = 5381
   for (let i = 0; i < source.length; i++) hash = ((hash << 5) + hash + source.charCodeAt(i)) | 0
@@ -34,18 +27,4 @@ export function sizeOf(svg: string): Size | undefined {
     }
   }
   return width > 0 && height > 0 ? { width, height } : undefined
-}
-
-export function zoomIn(zoom: number): number {
-  if (zoom === FIT) return 1.25
-  return ZOOMS.find(step => step > zoom + 1e-9) ?? ZOOMS[ZOOMS.length - 1] ?? zoom
-}
-
-export function zoomOut(zoom: number): number {
-  if (zoom === FIT) return 0.8
-  return [...ZOOMS].reverse().find(step => step < zoom - 1e-9) ?? ZOOMS[0] ?? zoom
-}
-
-export function zoomLabel(zoom: number): string {
-  return zoom === FIT ? 'fit' : `${Math.round(zoom * 100)}%`
 }

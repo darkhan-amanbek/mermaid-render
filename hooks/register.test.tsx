@@ -1,6 +1,5 @@
 import type { On } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
-import type { Engine } from 'claude-code/testing'
 import { diagramId } from './view'
 
 const FLOW = 'graph TD\n  A --> B'
@@ -183,20 +182,6 @@ test('with no runtime at all, diagrams stay code and one debug line says why', a
   expect(renderer.logs[0]).toContain('no node or bun')
 })
 
-const PANE = {
-  plugin: 'mermaid-render',
-  component: 'Pane',
-  requestId: 'mermaid-viewer',
-  props: { title: 'viewer', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
-} as const
-
-/** Draws a message with the diagram and presses ⤢ View under it, as the person does to open the viewer. */
-async function openViewerOf($: Engine, source: string, surface: 'desktop' | 'vscode') {
-  const ui = await $.ui.mount({ ...message(fence(source)), surface })
-  await ui.press({ key: `view:${diagramId(source)}:0` })
-  await ui.unmount()
-}
-
 test('a diagram draws at its own size with one ⤢ View button under it', async ($, on) => {
   fakeRenderer(on)
   for (const surface of ['desktop', 'vscode'] as const) {
@@ -205,130 +190,61 @@ test('a diagram draws at its own size with one ⤢ View button under it', async 
     expect(svg?.props.width).toBe(300)
     expect(svg?.props.height).toBe(200)
     expect((await ui.findAll({ type: 'Button' })).map(button => button.props.key)).toEqual([`view:${diagramId(FLOW)}:0`])
-    expect(await ui.find({ type: 'Code' })).toBeUndefined()
     await ui.unmount()
   }
 })
 
-test('the viewer pane is empty until ⤢ View is pressed, then shows that diagram with its toolbar', async ($, on) => {
-  fakeRenderer(on)
-  const opened: { id: string; title?: string }[] = []
-  on('ui.open', (_, e) => {
-    opened.push({ id: e.id, title: e.title })
-    return { value: { isPlaced: true } }
-  })
-  const empty = await $.ui.mount({ ...PANE, surface: 'vscode' })
-  expect(await empty.find({ type: 'Text', text: /Press ⤢ View/ })).toBeDefined()
-  expect(await empty.find({ type: 'Svg' })).toBeUndefined()
-  await empty.unmount()
-
-  await openViewerOf($, FLOW, 'vscode')
-  expect(opened).toEqual([{ id: 'mermaid-viewer', title: 'graph TD' }])
-
-  const pane = await $.ui.mount({ ...PANE, surface: 'vscode' })
-  const svg = await pane.find({ type: 'Svg' })
-  expect(svg?.props.source).toBe(svgOf(FLOW))
-  expect(svg?.props.width).toBe(300)
-  expect(await pane.find({ type: 'Text', text: '100%' })).toBeDefined()
-  for (const key of ['zoom-out', 'zoom-in', 'zoom-reset', 'zoom-fit', 'source', 'save', 'close']) {
-    expect(await pane.find({ type: 'Button', key })).toBeDefined()
-  }
-  await pane.unmount()
-})
-
-test('in the viewer, + and − scale the Svg, 1:1 restores it, Fit leaves the size to the surface', async ($, on) => {
-  fakeRenderer(on)
-  on('ui.open', () => ({ value: { isPlaced: true } }))
-  await openViewerOf($, FLOW, 'vscode')
-  const pane = await $.ui.mount({ ...PANE, surface: 'vscode' })
-  await pane.press({ key: 'zoom-in' })
-  expect((await pane.find({ type: 'Svg' }))?.props.width).toBe(375)
-  expect(await pane.find({ type: 'Text', text: '125%' })).toBeDefined()
-  await pane.press({ key: 'zoom-in' })
-  expect((await pane.find({ type: 'Svg' }))?.props.width).toBe(450)
-  await pane.press({ key: 'zoom-out' })
-  expect((await pane.find({ type: 'Svg' }))?.props.width).toBe(375)
-  await pane.press({ key: 'zoom-reset' })
-  expect((await pane.find({ type: 'Svg' }))?.props.width).toBe(300)
-  await pane.press({ key: 'zoom-fit' })
-  expect((await pane.find({ type: 'Svg' }))?.props.width).toBeUndefined()
-  expect(await pane.find({ type: 'Text', text: 'fit' })).toBeDefined()
-  await pane.unmount()
-})
-
-test('each diagram keeps its own zoom when the viewer switches between them', async ($, on) => {
-  fakeRenderer(on)
-  on('ui.open', () => ({ value: { isPlaced: true } }))
-  await openViewerOf($, FLOW, 'desktop')
-  const first = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  await first.press({ key: 'zoom-in' })
-  await first.unmount()
-
-  await openViewerOf($, SEQUENCE, 'desktop')
-  const second = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  expect((await second.find({ type: 'Svg' }))?.props.source).toBe(svgOf(SEQUENCE))
-  expect((await second.find({ type: 'Svg' }))?.props.width).toBe(300)
-  await second.unmount()
-
-  await openViewerOf($, FLOW, 'desktop')
-  const again = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  expect((await again.find({ type: 'Svg' }))?.props.width).toBe(375)
-  await again.unmount()
-})
-
-test('Source shows the mermaid text under the picture and hides it again', async ($, on) => {
-  fakeRenderer(on)
-  on('ui.open', () => ({ value: { isPlaced: true } }))
-  await openViewerOf($, SEQUENCE, 'vscode')
-  const pane = await $.ui.mount({ ...PANE, surface: 'vscode' })
-  await pane.press({ key: 'source' })
-  const code = await pane.find({ type: 'Code' })
-  expect(code?.props.source).toBe(SEQUENCE)
-  expect(code?.props.language).toBe('mermaid')
-  expect(await pane.find({ type: 'Button', text: 'Hide source' })).toBeDefined()
-  await pane.press({ key: 'source' })
-  expect(await pane.find({ type: 'Code' })).toBeUndefined()
-  await pane.unmount()
-})
-
-test('Open as file writes the SVG to a temp file and hands it to the first opener that starts', async ($, on) => {
-  const renderer = fakeRenderer(on, { openers: ['/opt/homebrew/bin/code'] })
-  on('ui.open', () => ({ value: { isPlaced: true } }))
+test('⤢ View writes the SVG and a viewer page to the temp folder and opens the page in the browser', async ($, on) => {
+  const renderer = fakeRenderer(on, { openers: ['open'] })
   on('env.get', () => ({ value: '/tmp/t/' }))
   const writes: { path: string; text: string }[] = []
   on('fs.write', (_, e) => {
     writes.push({ path: e.path, text: e.text })
     return { value: undefined }
   })
-  await openViewerOf($, FLOW, 'vscode')
-  const pane = await $.ui.mount({ ...PANE, surface: 'vscode' })
-  await pane.press({ key: 'save' })
-  expect(writes).toEqual([{ path: `/tmp/t/mermaid-render/${diagramId(FLOW)}.svg`, text: svgOf(FLOW) }])
-  expect(renderer.opened).toEqual([['/opt/homebrew/bin/code', '--reuse-window', writes[0]?.path]])
-  await pane.unmount()
+  const id = diagramId(FLOW)
+  const ui = await $.ui.mount({ ...message(fence(FLOW)), surface: 'vscode' })
+  await ui.press({ key: `view:${id}:0` })
+  expect(writes.map(write => write.path)).toEqual([`/tmp/t/mermaid-render/${id}.svg`, `/tmp/t/mermaid-render/${id}.html`])
+  expect(writes[0]?.text).toBe(svgOf(FLOW))
+  const page = writes[1]?.text ?? ''
+  expect(page).toContain('<!doctype html>')
+  expect(page).toContain(svgOf(FLOW))
+  expect(page).toContain('<title>graph TD</title>')
+  expect(page).toContain('wheel')
+  expect(page).toContain('gesturechange')
+  expect(renderer.opened).toEqual([['open', `/tmp/t/mermaid-render/${id}.html`]])
+  await ui.unmount()
 })
 
-test('Close closes the viewer pane', async ($, on) => {
-  fakeRenderer(on)
-  on('ui.open', () => ({ value: { isPlaced: true } }))
-  const closed: string[] = []
-  on('ui.close', (_, e) => {
-    closed.push(e.id)
+test('the viewer page escapes the mermaid source it shows', async ($, on) => {
+  const renderer = fakeRenderer(on, { openers: ['open'] })
+  on('env.get', () => ({ value: undefined }))
+  const writes: string[] = []
+  on('fs.write', (_, e) => {
+    writes.push(e.text)
     return { value: undefined }
   })
-  await openViewerOf($, FLOW, 'vscode')
-  const pane = await $.ui.mount({ ...PANE, surface: 'vscode' })
-  await pane.press({ key: 'close' })
-  expect(closed).toEqual(['mermaid-viewer'])
-  await pane.unmount()
+  const source = 'graph TD\n  A["<b>x</b> & y"] --> B'
+  const ui = await $.ui.mount({ ...message(fence(source)), surface: 'desktop' })
+  await ui.press({ key: `view:${diagramId(source)}:0` })
+  expect(writes[1]).toContain('A[&quot;&lt;b&gt;x&lt;/b&gt; &amp; y&quot;] --&gt; B')
+  expect(renderer.opened[0]?.[1]?.startsWith('/tmp/mermaid-render/')).toBe(true)
+  await ui.unmount()
 })
 
-test('on the terminal the viewer shows the mermaid source as code', async ($, on) => {
+test('when no opener starts, a toast names the viewer page', async ($, on) => {
   fakeRenderer(on)
-  on('ui.open', () => ({ value: { isPlaced: true } }))
-  await openViewerOf($, FLOW, 'desktop')
-  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect((await pane.find({ type: 'Code' }))?.props.source).toBe(FLOW)
-  expect(await pane.find({ type: 'Svg' })).toBeUndefined()
-  await pane.unmount()
+  on('env.get', () => ({ value: '/tmp/t' }))
+  on('fs.write', () => ({ value: undefined }))
+  const toasts: string[] = []
+  on('ui.toast', (_, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  const id = diagramId(FLOW)
+  const ui = await $.ui.mount({ ...message(fence(FLOW)), surface: 'vscode' })
+  await ui.press({ key: `view:${id}:0` })
+  expect(toasts).toEqual([`Could not open a browser; the viewer is at /tmp/t/mermaid-render/${id}.html`])
+  await ui.unmount()
 })

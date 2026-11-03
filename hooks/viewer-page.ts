@@ -1,0 +1,172 @@
+// The viewer page: one HTML file holding the diagram's SVG inline, with pinch,
+// wheel and drag navigation, that the browser opens. Nothing on it is fetched:
+// no scripts, styles or fonts from the network.
+
+const escapeHtml = (text: string) =>
+  text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
+
+const STYLE = `
+  :root { color-scheme: light dark; --bg: #ffffff; --fg: #27272a; --bar: rgba(255,255,255,.92); --line: #e4e4e7; --btn: #f4f4f5; --btn-h: #e4e4e7; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #1f1f1e; --fg: #e8e6e3; --bar: rgba(31,31,30,.92); --line: #3f3f46; --btn: #2a2a29; --btn-h: #3a3a39; } }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font: 13px/1.4 system-ui, -apple-system, sans-serif; }
+  #bar { position: fixed; top: 0; left: 0; right: 0; display: flex; gap: 6px; align-items: center; padding: 8px 12px; background: var(--bar); border-bottom: 1px solid var(--line); backdrop-filter: blur(6px); z-index: 2; flex-wrap: wrap; }
+  #bar b { margin-right: auto; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40vw; }
+  button { font: inherit; color: inherit; background: var(--btn); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  button:hover { background: var(--btn-h); }
+  a { color: inherit; text-decoration: none; }
+  #zoom { min-width: 4.5em; text-align: center; font-variant-numeric: tabular-nums; }
+  #stage { position: absolute; inset: 0; cursor: grab; touch-action: none; overflow: hidden; }
+  #stage.dragging { cursor: grabbing; }
+  #canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+  #canvas svg { display: block; }
+  #source { position: fixed; left: 0; right: 0; bottom: 0; max-height: 40vh; overflow: auto; margin: 0; padding: 12px 16px; background: var(--bar); border-top: 1px solid var(--line); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; display: none; z-index: 2; }
+  #source.shown { display: block; }
+  #hint { position: fixed; right: 12px; bottom: 10px; opacity: .55; font-size: 12px; pointer-events: none; z-index: 1; }
+`
+
+const SCRIPT = `
+  const stage = document.getElementById('stage')
+  const canvas = document.getElementById('canvas')
+  const svg = canvas.querySelector('svg')
+  const zoomLabel = document.getElementById('zoom')
+  const source = document.getElementById('source')
+  const MIN = 0.1, MAX = 20
+  let scale = 1, x = 0, y = 0
+
+  const natural = () => {
+    const box = svg.viewBox && svg.viewBox.baseVal
+    const w = parseFloat(svg.getAttribute('width')) || (box && box.width) || svg.getBoundingClientRect().width || 1
+    const h = parseFloat(svg.getAttribute('height')) || (box && box.height) || svg.getBoundingClientRect().height || 1
+    return { w, h }
+  }
+  const room = () => {
+    const bar = document.getElementById('bar').getBoundingClientRect().height
+    const src = source.classList.contains('shown') ? source.getBoundingClientRect().height : 0
+    return { top: bar, w: innerWidth, h: innerHeight - bar - src }
+  }
+  const apply = () => {
+    canvas.style.transform = 'translate(' + x + 'px,' + y + 'px) scale(' + scale + ')'
+    zoomLabel.textContent = Math.round(scale * 100) + '%'
+  }
+  const center = (s) => {
+    const { w, h } = natural(), r = room()
+    scale = Math.min(MAX, Math.max(MIN, s))
+    x = (r.w - w * scale) / 2
+    y = r.top + Math.max(16, (r.h - h * scale) / 2)
+    apply()
+  }
+  const fit = () => {
+    const { w, h } = natural(), r = room()
+    center(Math.min((r.w - 32) / w, (r.h - 32) / h))
+  }
+  const zoomAt = (factor, cx, cy) => {
+    const next = Math.min(MAX, Math.max(MIN, scale * factor))
+    const k = next / scale
+    x = cx - (cx - x) * k
+    y = cy - (cy - y) * k
+    scale = next
+    apply()
+  }
+  const zoomCenter = (factor) => { const r = room(); zoomAt(factor, r.w / 2, r.top + r.h / 2) }
+
+  // A trackpad pinch arrives as a wheel event with ctrlKey (Chrome, Edge, Firefox);
+  // two-finger scroll pans; cmd/ctrl + wheel on a mouse zooms too.
+  stage.addEventListener('wheel', (e) => {
+    e.preventDefault()
+    if (e.ctrlKey || e.metaKey) {
+      const factor = Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.002))
+      zoomAt(factor, e.clientX, e.clientY)
+    } else {
+      x -= e.deltaX
+      y -= e.deltaY
+      apply()
+    }
+  }, { passive: false })
+
+  // Safari reports a pinch as gesture events instead.
+  let gestureScale = 1
+  stage.addEventListener('gesturestart', (e) => { e.preventDefault(); gestureScale = 1 })
+  stage.addEventListener('gesturechange', (e) => {
+    e.preventDefault()
+    zoomAt(e.scale / gestureScale, e.clientX, e.clientY)
+    gestureScale = e.scale
+  })
+  stage.addEventListener('gestureend', (e) => e.preventDefault())
+
+  // Drag to pan; pointer events cover mouse, trackpad and touch alike.
+  let drag = null
+  stage.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return
+    drag = { px: e.clientX, py: e.clientY, x, y }
+    stage.setPointerCapture(e.pointerId)
+    stage.classList.add('dragging')
+  })
+  stage.addEventListener('pointermove', (e) => {
+    if (drag === null) return
+    x = drag.x + (e.clientX - drag.px)
+    y = drag.y + (e.clientY - drag.py)
+    apply()
+  })
+  const endDrag = () => { drag = null; stage.classList.remove('dragging') }
+  stage.addEventListener('pointerup', endDrag)
+  stage.addEventListener('pointercancel', endDrag)
+  stage.addEventListener('dblclick', (e) => {
+    if (Math.abs(scale - 1) < 0.01) fit(); else center(1)
+  })
+
+  const act = {
+    in: () => zoomCenter(1.25),
+    out: () => zoomCenter(0.8),
+    natural: () => center(1),
+    fit,
+    source: () => { source.classList.toggle('shown'); fit() },
+    copy: () => navigator.clipboard.writeText(source.textContent),
+  }
+  document.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => act[b.dataset.act]()))
+  addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey) return
+    if (e.key === '+' || e.key === '=') act.in()
+    else if (e.key === '-') act.out()
+    else if (e.key === '0') act.fit()
+    else if (e.key === '1') act.natural()
+    else if (e.key === 's') act.source()
+    else if (e.key === 'Escape' && source.classList.contains('shown')) act.source()
+  })
+  addEventListener('resize', fit)
+
+  const { w, h } = natural(), r = room()
+  if (w <= r.w - 32 && h <= r.h - 32) center(1); else fit()
+`
+
+export function viewerPage({ alt, svg, source }: { alt: string; svg: string; source: string }): string {
+  const title = escapeHtml(alt)
+  const download = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${title}</title>
+<style>${STYLE}</style>
+</head>
+<body>
+<div id="bar">
+  <b title="${title}">${title}</b>
+  <button data-act="out" title="Zoom out (−)">−</button>
+  <span id="zoom">100%</span>
+  <button data-act="in" title="Zoom in (+)">+</button>
+  <button data-act="natural" title="Natural size (1)">1:1</button>
+  <button data-act="fit" title="Fit to window (0)">Fit</button>
+  <button data-act="source" title="Show the mermaid source (s)">Source</button>
+  <button data-act="copy" title="Copy the mermaid source">Copy</button>
+  <a href="${download}" download="diagram.svg"><button title="Save the SVG">Download</button></a>
+</div>
+<div id="stage"><div id="canvas">${svg}</div></div>
+<pre id="source">${escapeHtml(source)}</pre>
+<div id="hint">pinch or ⌘ + scroll to zoom · scroll or drag to pan · double-click to fit</div>
+<script>${SCRIPT}</script>
+</body>
+</html>
+`
+}

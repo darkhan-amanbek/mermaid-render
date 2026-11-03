@@ -2,24 +2,23 @@
 
 A Claude Code mod that draws mermaid diagrams in assistant replies. When a reply holds a closed fenced code block whose language is `mermaid`, the block is drawn as a picture instead of as code.
 
-This is a fork of [ceyeoh/mermaid-render](https://github.com/ceyeoh/mermaid-render) that adds a viewer pane: one button under every drawn diagram opens it large beside the chat, with zoom in and out, natural size, fit to width, a toggle that shows the mermaid source, and a button that opens the SVG in VS Code (or your OS's default viewer).
+This is a fork of [ceyeoh/mermaid-render](https://github.com/ceyeoh/mermaid-render) that adds a viewer: one button under every drawn diagram opens it in the browser with trackpad pinch-zoom, wheel zoom, drag to pan, the mermaid source and a download.
 
 - In the desktop app, VS Code and the mobile app, the diagram is an SVG. Its colors follow the light or dark color scheme.
 - In the terminal, the diagram is drawn with Unicode box-drawing characters.
 
 ## The viewer
 
-Under each drawn diagram there is one button, **⤢ View**. It opens the viewer, a pane beside the chat that shows that diagram large, with a toolbar:
+Under each drawn diagram there is one button, **⤢ View**. It writes the diagram to `$TMPDIR/mermaid-render/<id>.html` (with the SVG beside it) and opens that page in your default browser. The page holds the SVG inline and fetches nothing. On it:
 
-- **−** / **+** step the zoom through 50%, 67%, 80%, 100%, 125%, 150%, 200% and 300% of the drawing's own size. The current zoom shows between them.
-- **1:1** returns to the drawing's own size. **Fit** lets the pane size the drawing to its width.
-- **Source** shows the mermaid text under the picture; press again to hide it.
-- **Open as file** writes the SVG to `$TMPDIR/mermaid-render/<id>.svg` and opens it with `code --reuse-window`, falling back to `open` (macOS) or `xdg-open` (Linux). When nothing could open it, a toast names the file.
-- **Close**, or Escape while the pane has the keyboard, closes the viewer.
+- a trackpad **pinch**, or **⌘ / Ctrl + scroll**, zooms around the pointer; a two-finger **scroll** or a **drag** pans;
+- **−** / **+**, **1:1** and **Fit** on the toolbar, and the keys `-`, `+`, `1`, `0`; a **double-click** toggles between fit and natural size;
+- **Source** (key `s`) shows the mermaid text, **Copy** copies it, **Download** saves the SVG;
+- the page follows the light or dark color scheme of the system.
 
-Pressing ⤢ View under another diagram switches the viewer to it. The zoom and the source toggle of each diagram are kept for the session. In the chat itself the diagram draws at its own size: a small diagram is never stretched to the width of the chat. The terminal keeps its box-drawing text in the chat; its viewer shows the mermaid source.
+The browser is used because the VS Code extension draws an SVG as a static image and passes no wheel or pinch to a mod, and the mods API has no modal dialog of its own. The page opens with `open` on macOS, `xdg-open` on Linux and `start` on Windows; when none starts, a toast names the file.
 
-VS Code draws an SVG as an image, so hover and tooltips inside the picture do not work there; the desktop app draws it in a sandboxed frame where they do.
+In the chat itself the diagram draws at its own size: a small diagram is never stretched to the width of the chat. The terminal keeps its box-drawing text and has no button.
 
 ## Supported diagrams
 
@@ -65,7 +64,7 @@ The renderer runs as a separate process, because its bundle is larger than a hoo
 - To find a runtime, it runs each candidate with `--version` until one starts. It does this once per session.
 - A diagram already drawn comes from an in-memory cache of up to 256 entries. The cache is gone when Claude Code exits.
 - The renderer makes no network requests, reads no files besides its own code, and writes nothing to disk. Nothing leaves your machine.
-- The only write to disk is the **Open as file** button, which saves that one SVG under `$TMPDIR/mermaid-render/` before opening it.
+- The only write to disk is the **⤢ View** button, which saves that one diagram's SVG and viewer page under `$TMPDIR/mermaid-render/` before opening the page.
 - beautiful-mermaid's SVG asks for Google Fonts through a CSS `@import`. The renderer strips that line, and it throws away any SVG that still references a URL other than the SVG namespace, so a drawn diagram never fetches anything.
 
 ## Vendored code
@@ -77,6 +76,7 @@ Most of the file reads as plain JavaScript. The elkjs part is elkjs's own publis
 ## Development
 
 - `claude plugin test .` runs the hook and parser tests.
+- `hooks/viewer-page.ts` holds the viewer page: its CSS and script are plain strings, with no build step.
 - `node renderer/render.check.mjs` runs the real renderer over a batch of diagrams.
 - `scripts/vendor.sh` rebuilds `renderer/beautiful-mermaid.mjs` from the pinned npm release, with its license files.
 
