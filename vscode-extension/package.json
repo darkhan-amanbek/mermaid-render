@@ -1,0 +1,19 @@
+{
+  "name": "mermaid-viewer",
+  "displayName": "Mermaid Viewer for Claude Code",
+  "description": "Opens the diagram viewer pages that the mermaid-render Claude Code mod writes, as a webview tab inside VS Code: pinch-zoom, wheel zoom, drag, source, save.",
+  "version": "0.1.0",
+  "publisher": "darkhan-amanbek",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/darkhan-amanbek/mermaid-render" },
+  "engines": { "vscode": "^1.98.0" },
+  "categories": ["Visualization"],
+  "keywords": ["mermaid", "diagram", "claude code", "viewer"],
+  "main": "./extension.js",
+  "activationEvents": ["onUri"],
+  "contributes": {
+    "commands": [
+      { "command": "mermaidViewer.open", "title": "Mermaid Viewer: Open a viewer page…" }
+    ]
+  }
+}

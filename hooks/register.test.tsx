@@ -12,7 +12,10 @@ const asciiOf = (source: string) => `┌──┐\n│${source.split('\n')[0]}�
 
 type Renderer = { renderCalls: string[][]; logs: string[]; opened: string[][] }
 
-function fakeRenderer(on: On, { startable = ['node'], failFirstRender = false, openers = [] as string[] } = {}): Renderer {
+function fakeRenderer(
+  on: On,
+  { startable = ['node'], failFirstRender = false, openers = [] as string[], extensions = undefined as string[] | undefined } = {},
+): Renderer {
   const renderer: Renderer = { renderCalls: [], logs: [], opened: [] }
   on('ui.render', ($, e) => {
     const { Text } = $.ui.resolve(e)
@@ -26,6 +29,11 @@ function fakeRenderer(on: On, { startable = ['node'], failFirstRender = false, o
     const [argv0 = '', script = ''] = e.argv
     const ok = { exitCode: 0, stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
     if (openers.includes(argv0)) {
+      renderer.opened.push([...e.argv])
+      return { value: { ...ok, stdout: '' } }
+    }
+    if (argv0 === 'code' && extensions !== undefined) {
+      if (script === '--list-extensions') return { value: { ...ok, stdout: extensions.join('\n') + '\n' } }
       renderer.opened.push([...e.argv])
       return { value: { ...ok, stdout: '' } }
     }
@@ -195,7 +203,7 @@ test('a diagram draws at its own size with one ⤢ View button under it', async 
 })
 
 test('⤢ View writes the SVG and a viewer page to the temp folder and opens the page in the browser', async ($, on) => {
-  const renderer = fakeRenderer(on, { openers: ['open'] })
+  const renderer = fakeRenderer(on, { openers: ['open'], extensions: ['ms-python.python'] })
   on('env.get', () => ({ value: '/tmp/t/' }))
   const writes: { path: string; text: string }[] = []
   on('fs.write', (_, e) => {
@@ -213,7 +221,25 @@ test('⤢ View writes the SVG and a viewer page to the temp folder and opens the
   expect(page).toContain('<title>graph TD</title>')
   expect(page).toContain('wheel')
   expect(page).toContain('gesturechange')
+  expect(page).toContain('acquireVsCodeApi')
   expect(renderer.opened).toEqual([['open', `/tmp/t/mermaid-render/${id}.html`]])
+  await ui.unmount()
+})
+
+test('with the viewer extension installed, ⤢ View opens the page in VS Code through its URI, not the browser', async ($, on) => {
+  const renderer = fakeRenderer(on, { openers: ['open'], extensions: ['ms-python.python', 'darkhan-amanbek.mermaid-viewer'] })
+  on('env.get', () => ({ value: '/tmp/t' }))
+  on('fs.write', () => ({ value: undefined }))
+  const id = diagramId(FLOW)
+  const ui = await $.ui.mount({ ...message(`${fence(FLOW)}\n${fence(SEQUENCE)}`), surface: 'vscode' })
+  await ui.press({ key: `view:${id}:0` })
+  await ui.press({ key: `view:${diagramId(SEQUENCE)}:1` })
+  const url = (page: string) => `vscode://darkhan-amanbek.mermaid-viewer/open?path=${encodeURIComponent(page)}`
+  expect(renderer.opened).toEqual([
+    ['code', '--open-url', url(`/tmp/t/mermaid-render/${id}.html`)],
+    ['code', '--open-url', url(`/tmp/t/mermaid-render/${diagramId(SEQUENCE)}.html`)],
+  ])
+  expect(renderer.renderCalls).toHaveLength(1)
   await ui.unmount()
 })
 

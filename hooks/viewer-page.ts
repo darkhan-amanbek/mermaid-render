@@ -8,13 +8,17 @@ const escapeHtml = (text: string) =>
 const STYLE = `
   :root { color-scheme: light dark; --bg: #ffffff; --fg: #27272a; --bar: rgba(255,255,255,.92); --line: #e4e4e7; --btn: #f4f4f5; --btn-h: #e4e4e7; }
   @media (prefers-color-scheme: dark) { :root { --bg: #1f1f1e; --fg: #e8e6e3; --bar: rgba(31,31,30,.92); --line: #3f3f46; --btn: #2a2a29; --btn-h: #3a3a39; } }
+  /* Inside a VS Code webview the theme comes as a class on body, not as prefers-color-scheme. */
+  body.vscode-light { --bg: #ffffff; --fg: #27272a; --bar: rgba(255,255,255,.92); --line: #e4e4e7; --btn: #f4f4f5; --btn-h: #e4e4e7; }
+  body.vscode-dark, body.vscode-high-contrast { --bg: #1f1f1e; --fg: #e8e6e3; --bar: rgba(31,31,30,.92); --line: #3f3f46; --btn: #2a2a29; --btn-h: #3a3a39; }
+  body.vscode-light #canvas svg { --bg: #ffffff; --fg: #27272a; }
+  body.vscode-dark #canvas svg, body.vscode-high-contrast #canvas svg { --bg: #1f1f1e; --fg: #e8e6e3; }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font: 13px/1.4 system-ui, -apple-system, sans-serif; }
   #bar { position: fixed; top: 0; left: 0; right: 0; display: flex; gap: 6px; align-items: center; padding: 8px 12px; background: var(--bar); border-bottom: 1px solid var(--line); backdrop-filter: blur(6px); z-index: 2; flex-wrap: wrap; }
   #bar b { margin-right: auto; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40vw; }
   button { font: inherit; color: inherit; background: var(--btn); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
   button:hover { background: var(--btn-h); }
-  a { color: inherit; text-decoration: none; }
   #zoom { min-width: 4.5em; text-align: center; font-variant-numeric: tabular-nums; }
   #stage { position: absolute; inset: 0; cursor: grab; touch-action: none; overflow: hidden; }
   #stage.dragging { cursor: grabbing; }
@@ -31,6 +35,7 @@ const SCRIPT = `
   const svg = canvas.querySelector('svg')
   const zoomLabel = document.getElementById('zoom')
   const source = document.getElementById('source')
+  const vscodeApi = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null
   const MIN = 0.1, MAX = 20
   let scale = 1, x = 0, y = 0
 
@@ -121,7 +126,15 @@ const SCRIPT = `
     natural: () => center(1),
     fit,
     source: () => { source.classList.toggle('shown'); fit() },
-    copy: () => navigator.clipboard.writeText(source.textContent),
+    copy: () => vscodeApi ? vscodeApi.postMessage({ type: 'copy', text: source.textContent }) : navigator.clipboard.writeText(source.textContent),
+    save: () => {
+      const markup = new XMLSerializer().serializeToString(svg)
+      if (vscodeApi) return vscodeApi.postMessage({ type: 'save', svg: markup })
+      const a = document.createElement('a')
+      a.href = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markup)
+      a.download = 'diagram.svg'
+      a.click()
+    },
   }
   document.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => act[b.dataset.act]()))
   addEventListener('keydown', (e) => {
@@ -141,12 +154,12 @@ const SCRIPT = `
 
 export function viewerPage({ alt, svg, source }: { alt: string; svg: string; source: string }): string {
   const title = escapeHtml(alt)
-  const download = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:;">
 <title>${title}</title>
 <style>${STYLE}</style>
 </head>
@@ -160,7 +173,7 @@ export function viewerPage({ alt, svg, source }: { alt: string; svg: string; sou
   <button data-act="fit" title="Fit to window (0)">Fit</button>
   <button data-act="source" title="Show the mermaid source (s)">Source</button>
   <button data-act="copy" title="Copy the mermaid source">Copy</button>
-  <a href="${download}" download="diagram.svg"><button title="Save the SVG">Download</button></a>
+  <button data-act="save" title="Save the SVG">Download</button>
 </div>
 <div id="stage"><div id="canvas">${svg}</div></div>
 <pre id="source">${escapeHtml(source)}</pre>

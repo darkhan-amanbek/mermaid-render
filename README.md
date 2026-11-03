@@ -9,14 +9,24 @@ This is a fork of [ceyeoh/mermaid-render](https://github.com/ceyeoh/mermaid-rend
 
 ## The viewer
 
-Under each drawn diagram there is one button, **⤢ View**. It writes the diagram to `$TMPDIR/mermaid-render/<id>.html` (with the SVG beside it) and opens that page in your default browser. The page holds the SVG inline and fetches nothing. On it:
+Under each drawn diagram there is one button, **⤢ View**. It writes the diagram to `$TMPDIR/mermaid-render/<id>.html` (with the SVG beside it) and opens that page: in a tab inside VS Code when the companion extension is installed (below), else in your default browser. The page holds the SVG inline and fetches nothing. On it:
 
 - a trackpad **pinch**, or **⌘ / Ctrl + scroll**, zooms around the pointer; a two-finger **scroll** or a **drag** pans;
 - **−** / **+**, **1:1** and **Fit** on the toolbar, and the keys `-`, `+`, `1`, `0`; a **double-click** toggles between fit and natural size;
 - **Source** (key `s`) shows the mermaid text, **Copy** copies it, **Download** saves the SVG;
 - the page follows the light or dark color scheme of the system.
 
-The browser is used because the VS Code extension draws an SVG as a static image and passes no wheel or pinch to a mod, and the mods API has no modal dialog of its own. The page opens with `open` on macOS, `xdg-open` on Linux and `start` on Windows; when none starts, a toast names the file.
+### Inside VS Code
+
+The Claude Code extension draws an SVG as a static image and passes no wheel or pinch to a mod, and the mods API has no modal dialog of its own, so the viewer is a page. To have it open as a tab beside the chat, install the small companion extension from [`vscode-extension/`](vscode-extension/):
+
+```bash
+code --install-extension vscode-extension/mermaid-viewer-0.1.0.vsix
+```
+
+With it installed, ⤢ View runs `code --open-url vscode://darkhan-amanbek.mermaid-viewer/open?path=<page>` and the extension shows the page in a webview panel. VS Code asks once whether the extension may open the URI; tick "Do not ask me again". The extension opens only pages under `<os temp dir>/mermaid-render/`.
+
+Without the extension, the page opens with `open` on macOS, `xdg-open` on Linux and `start` on Windows; when none starts, a toast names the file.
 
 In the chat itself the diagram draws at its own size: a small diagram is never stretched to the width of the chat. The terminal keeps its box-drawing text and has no button.
 

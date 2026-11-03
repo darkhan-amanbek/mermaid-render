@@ -29,13 +29,33 @@ const RUNTIMES = ['node', '/opt/homebrew/bin/node', '/usr/local/bin/node', 'bun'
 const RENDER_TIMEOUT_MS = 20_000
 const CACHE_LIMIT = 256
 
-// What opens the viewer page, in order: the OS's default browser by its opener.
+// What opens the viewer page when the VS Code extension is not installed: the OS's default browser.
 const OPENERS: readonly (readonly string[])[] = [['open'], ['xdg-open'], ['cmd', '/c', 'start', '']]
 const OPEN_TIMEOUT_MS = 10_000
+// The companion VS Code extension (vscode-extension/ in this repository) shows the page in a tab
+// inside VS Code. It is reached through VS Code's CLI, by the first of these that starts.
+const CODE_CLIS = ['code', '/opt/homebrew/bin/code', '/usr/local/bin/code']
+const VIEWER_EXTENSION = 'darkhan-amanbek.mermaid-viewer'
+const viewerUrl = (page: string) => `vscode://${VIEWER_EXTENSION}/open?path=${encodeURIComponent(page)}`
 
 const cache = new Map<string, Promise<Rendered>>()
 let runtime: Promise<string | undefined> | undefined
 let hasLoggedNoRuntime = false
+let codeWithViewer: Promise<string | undefined> | undefined
+
+// The `code` CLI that has the viewer extension installed, found once per session; undefined when none.
+function findCodeWithViewer($: EngineInterface): Promise<string | undefined> {
+  codeWithViewer ??= (async () => {
+    for (const candidate of CODE_CLIS) {
+      try {
+        const { exitCode, stdout } = await $.process.run([candidate, '--list-extensions'], { timeoutMs: OPEN_TIMEOUT_MS })
+        if (exitCode === 0) return stdout.toLowerCase().includes(VIEWER_EXTENSION) ? candidate : undefined
+      } catch {}
+    }
+    return undefined
+  })()
+  return codeWithViewer
+}
 
 function findRuntime($: EngineInterface): Promise<string | undefined> {
   runtime ??= (async () => {
@@ -163,14 +183,22 @@ export const register: Register = on => {
   }).catch(($, e, next) => next(e))
 }
 
-// Writes the viewer page beside a copy of the SVG and opens it in the browser,
-// where a trackpad pinch, the wheel and a drag move the picture.
+// Writes the viewer page beside a copy of the SVG and opens it: in a VS Code tab when the
+// viewer extension is installed, else in the browser. Either way a trackpad pinch, the wheel
+// and a drag move the picture.
 async function openViewer($: EngineInterface, diagram: Diagram): Promise<void> {
   const tmp = ((await $.env.get('TMPDIR')) ?? '/tmp').replace(/[\\/]+$/, '')
   const dir = `${tmp}/mermaid-render`
   const page = `${dir}/${diagram.id}.html`
   await $.fs.write(`${dir}/${diagram.id}.svg`, diagram.output)
   await $.fs.write(page, viewerPage({ alt: diagram.alt, svg: diagram.output, source: diagram.source }))
+  const code = await findCodeWithViewer($)
+  if (code !== undefined) {
+    try {
+      const { exitCode } = await $.process.run([code, '--open-url', viewerUrl(page)], { timeoutMs: OPEN_TIMEOUT_MS })
+      if (exitCode === 0) return
+    } catch {}
+  }
   for (const opener of OPENERS) {
     try {
       const { exitCode } = await $.process.run([...opener, page], { timeoutMs: OPEN_TIMEOUT_MS })
