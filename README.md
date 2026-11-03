@@ -30,6 +30,14 @@ Without the extension, the page opens with `open` on macOS, `xdg-open` on Linux 
 
 In the chat itself the diagram draws at its own size: a small diagram is never stretched to the width of the chat. The terminal keeps its box-drawing text and has no button.
 
+## What the model is told
+
+The mod adds one section to the end of the system prompt, `mermaid-render:diagrams`, so that Claude knows a mermaid block is drawn and uses one well: where a picture says more than prose, only the kinds this mod draws, a few words per node, about 15 nodes at most, and always as an insert within an ordinary markdown reply rather than as the whole answer. The text is `DIAGRAM_GUIDANCE` in `hooks/register.tsx`; edit it there to change the house style.
+
+## The frame around a reply
+
+In VS Code a reply that holds a diagram is drawn inside a frame labelled "From the mermaid-render plugin". That frame is the chat's own mark for a message a plugin drew, not something the mod adds, and the mods API has no way to leave it out: the whole message block is one drawing site, so the mod has to draw the text around the diagram too.
+
 ## Supported diagrams
 
 Flowcharts (`graph` / `flowchart`), sequence diagrams, state diagrams, class diagrams and ER diagrams. Rendering comes from [beautiful-mermaid](https://github.com/lukilabs/beautiful-mermaid) 1.1.3, vendored in `renderer/`.

@@ -166,7 +166,25 @@ function toBlocks(segments: Segment[], rendered: Rendered[]): Block[] {
   return blocks
 }
 
+// What the model is told about diagrams, as a section at the end of the system prompt: when a
+// picture earns its place, which kinds draw, and that a diagram is an insert within prose.
+export const DIAGRAM_GUIDANCE = `# Diagrams
+
+A fenced \`\`\`mermaid block in your reply is drawn as a picture in the chat, with a ⛶ button that opens it large with zoom. Use that where a picture says more than prose: a flow with branches, a sequence of calls between services, a state machine, a data model. Most replies need no diagram; one that does usually needs exactly one.
+
+Rules:
+- A diagram is an insert within an ordinary markdown reply, never its container. Headings, lists, explanations and code stay as markdown text around it; node labels hold a few words, not sentences.
+- Only these kinds are drawn: flowchart / graph, sequenceDiagram, stateDiagram-v2, classDiagram, erDiagram. Any other kind (pie, gantt, mindmap, gitGraph, timeline, ...) stays a code block, so do not write one.
+- Keep a diagram small enough to read at a glance: about 15 nodes or 12 messages at most. A bigger picture becomes two or three diagrams, each introduced by a sentence.
+- Prefer a table or a sentence where it says the same thing; prefer flowchart LR for short chains and TD for deep trees.
+- Write the block only once it is complete; a diagram that fails to parse stays a code block.`
+
 export const register: Register = on => {
+  on('prompt.compose', async ($, e, next) => {
+    const { sections } = await next(e)
+    return { sections: [...sections, { id: 'mermaid-render:diagrams', text: DIAGRAM_GUIDANCE, scope: 'session' }] }
+  })
+
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
     if (e.props.isSummary === true) return next(e)
     const segments = parseSegments(e.props.text)

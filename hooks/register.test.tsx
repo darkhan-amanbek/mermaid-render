@@ -276,3 +276,12 @@ test('when no opener starts, a toast names the viewer page', async ($, on) => {
   expect(toasts).toEqual([`Could not open a browser; the viewer is at /tmp/t/mermaid-render/${id}.html`])
   await ui.unmount()
 })
+
+test('the system prompt ends with a session section telling the model how to use diagrams', async ($, on) => {
+  on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'engine', scope: 'shared' as const }] }))
+  const { sections } = await $.prompt.compose()
+  expect(sections.map(section => section.id)).toEqual(['intro', 'mermaid-render:diagrams'])
+  expect(sections[1]?.scope).toBe('session')
+  expect(sections[1]?.text).toContain('sequenceDiagram')
+  expect(sections[1]?.text).toContain('never its container')
+})
