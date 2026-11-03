@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderElement, RenderInput, RenderSurface, RenderViewport } from 'claude-code'
 import { parseSegments, type Segment } from './segments'
 import { FIT, diagramId, sizeOf, zoomIn, zoomLabel, zoomOut, type Size } from './view'
-import type { View } from '../types'
+import type { View, Viewer } from '../types'
 
 type Format = 'svg' | 'ascii'
 type Rendered = { ok: true; output: string } | { ok: false; reason: string }
@@ -41,10 +41,13 @@ const OPENERS: readonly (readonly string[])[] = [
 const OPEN_TIMEOUT_MS = 10_000
 
 const DEFAULT_VIEW: View = { zoom: 1, showSource: false }
+const VIEWER = 'mermaid-viewer'
 
 // Per-diagram view state, keyed by the diagram's id, kept for the session so a
 // zoomed diagram stays zoomed across redraws and reloads of this module.
 const views = atom({ plugin: 'mermaid-render', key: 'views' } as const, {}, { shape: 'views-1' })
+// The diagram the viewer pane shows, null while it shows nothing.
+const viewer = atom({ plugin: 'mermaid-render', key: 'viewer' } as const, null, { shape: 'viewer-1' })
 
 const cache = new Map<string, Promise<Rendered>>()
 let runtime: Promise<string | undefined> | undefined
@@ -172,9 +175,20 @@ export const register: Register = on => {
     const blocks = toBlocks(segments, (await renderAll($, format, sources)).map(fitting))
     if (blocks.every(block => block.kind === 'markdown')) return next(e)
 
-    const viewed = e.surface === 'terminal' ? {} : await read($, views)
-    return drawBlocks($, e, blocks, viewed)
+    return drawBlocks($, e, blocks)
   }).catch(($, e, next) => next(e))
+
+  on('ui.render', { component: 'Pane', requestId: VIEWER }, async ($, e) => {
+    const shown = await read($, viewer)
+    const viewed = await read($, views)
+    return drawViewer($, e, shown, viewed)
+  })
+}
+
+async function openViewer($: EngineInterface, diagram: Diagram): Promise<void> {
+  const { id, source, output, alt } = diagram
+  await update($, viewer, () => ({ id, source, output, alt }))
+  await $.ui.open({ id: VIEWER, title: alt, focus: true, closeOnEscape: true })
 }
 
 async function setView($: EngineInterface, id: string, change: (view: View) => View): Promise<void> {
@@ -182,7 +196,7 @@ async function setView($: EngineInterface, id: string, change: (view: View) => V
 }
 
 // Writes the SVG to a temp file and hands it to VS Code, or to the OS's opener.
-async function openOutside($: EngineInterface, diagram: Diagram): Promise<void> {
+async function openOutside($: EngineInterface, diagram: Viewer): Promise<void> {
   const tmp = ((await $.env.get('TMPDIR')) ?? '/tmp').replace(/[\\/]+$/, '')
   const path = `${tmp}/mermaid-render/${diagram.id}.svg`
   await $.fs.write(path, diagram.output)
@@ -195,49 +209,77 @@ async function openOutside($: EngineInterface, diagram: Diagram): Promise<void> 
   $.ui.toast(`Diagram saved to ${path}`)
 }
 
-function diagramDrawer(
-  $: EngineInterface,
-  e: RenderInput<'AssistantMessage'>,
-  viewed: Record<string, View>,
-): (diagram: Diagram) => RenderElement {
+function diagramDrawer($: EngineInterface, e: RenderInput<'AssistantMessage'>): (diagram: Diagram) => RenderElement {
   if (e.surface === 'terminal') {
     const { Code } = $.ui.resolve(e)
     return ({ output }) => <Code source={output} wrap="truncate-end" />
   }
-  const { Box, Text, Button, Svg, Code } = $.ui.resolve(e)
+  const { Box, Button, Svg } = $.ui.resolve(e)
   return diagram => {
-    const { id, index, output, alt, size, source } = diagram
-    const view = viewed[id] ?? DEFAULT_VIEW
-    const key = (name: string) => `${name}:${id}:${index}`
-    const scaled = view.zoom !== FIT && size !== undefined ? { width: size.width * view.zoom, height: size.height * view.zoom } : {}
+    const { id, index, output, alt, size } = diagram
+    const natural = size === undefined ? {} : { width: size.width, height: size.height }
     return (
       <Box flexDirection="column">
-        <Svg source={output} alt={alt} isInteractive={e.surface === 'desktop'} {...scaled} />
-        <Box flexDirection="row" gap={1} flexWrap="wrap">
-          <Button key={key('zoom-out')} onPress={() => setView($, id, v => ({ ...v, zoom: zoomOut(v.zoom) }))}>−</Button>
-          <Text dimColor>{zoomLabel(view.zoom)}</Text>
-          <Button key={key('zoom-in')} onPress={() => setView($, id, v => ({ ...v, zoom: zoomIn(v.zoom) }))}>+</Button>
-          <Button key={key('zoom-reset')} onPress={() => setView($, id, v => ({ ...v, zoom: 1 }))}>1:1</Button>
-          <Button key={key('zoom-fit')} onPress={() => setView($, id, v => ({ ...v, zoom: FIT }))}>Fit</Button>
-          <Button key={key('source')} onPress={() => setView($, id, v => ({ ...v, showSource: !v.showSource }))}>
-            {view.showSource ? 'Hide source' : 'Source'}
+        <Svg source={output} alt={alt} isInteractive={e.surface === 'desktop'} {...natural} />
+        <Box flexDirection="row">
+          <Button key={`view:${id}:${index}`} onPress={() => openViewer($, diagram)}>
+            ⤢ View
           </Button>
-          <Button key={key('open')} onPress={() => openOutside($, diagram)}>Open</Button>
         </Box>
-        {view.showSource && <Code source={source} language="mermaid" />}
       </Box>
     )
   }
 }
 
-function drawBlocks(
+// The viewer pane: one diagram large, with zoom, its source and a way to save it.
+function drawViewer(
   $: EngineInterface,
-  e: RenderInput<'AssistantMessage'>,
-  blocks: Block[],
+  e: RenderInput<'Pane'>,
+  shown: Viewer | null,
   viewed: Record<string, View>,
 ): RenderElement {
+  const { Box, Text, Button } = $.ui.resolve(e)
+  if (shown === null) {
+    return (
+      <Box padding={1}>
+        <Text dimColor>Press ⤢ View under a diagram to show it here.</Text>
+      </Box>
+    )
+  }
+  const { id, source, output, alt } = shown
+  const view = viewed[id] ?? DEFAULT_VIEW
+  const zoom = (change: (zoom: number) => number) => () => setView($, id, v => ({ ...v, zoom: change(v.zoom) }))
+  const { Code } = $.ui.resolve(e)
+  const picture = (() => {
+    if (e.surface === 'terminal') return <Code source={source} language="mermaid" />
+    const { Svg } = $.ui.resolve(e)
+    const size = sizeOf(output)
+    const scaled = view.zoom !== FIT && size !== undefined ? { width: size.width * view.zoom, height: size.height * view.zoom } : {}
+    return <Svg source={output} alt={alt} isInteractive={e.surface === 'desktop'} {...scaled} />
+  })()
+  return (
+    <Box flexDirection="column" gap={1}>
+      <Box flexDirection="row" gap={1} flexWrap="wrap">
+        <Button key="zoom-out" onPress={zoom(zoomOut)}>−</Button>
+        <Text dimColor>{zoomLabel(view.zoom)}</Text>
+        <Button key="zoom-in" onPress={zoom(zoomIn)}>+</Button>
+        <Button key="zoom-reset" onPress={zoom(() => 1)}>1:1</Button>
+        <Button key="zoom-fit" onPress={zoom(() => FIT)}>Fit</Button>
+        <Button key="source" onPress={() => setView($, id, v => ({ ...v, showSource: !v.showSource }))}>
+          {view.showSource ? 'Hide source' : 'Source'}
+        </Button>
+        <Button key="save" onPress={() => openOutside($, shown)}>Open as file</Button>
+        <Button key="close" role="dismiss" onPress={() => $.ui.close({ id: VIEWER })}>Close</Button>
+      </Box>
+      {picture}
+      {view.showSource && <Code source={source} language="mermaid" />}
+    </Box>
+  )
+}
+
+function drawBlocks($: EngineInterface, e: RenderInput<'AssistantMessage'>, blocks: Block[]): RenderElement {
   const { Box, Markdown } = $.ui.resolve(e)
-  const drawDiagram = diagramDrawer($, e, viewed)
+  const drawDiagram = diagramDrawer($, e)
   const body = (
     <Box flexDirection="column" gap={1}>
       {blocks.map(block => (block.kind === 'markdown' ? <Markdown text={block.text} /> : drawDiagram(block)))}
