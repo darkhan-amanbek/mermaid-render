@@ -36,7 +36,10 @@ function activate(context) {
       shown.reveal(undefined, true)
       return
     }
-    const panel = vscode.window.createWebviewPanel('mermaidViewer', title, vscode.ViewColumn.Beside, {
+    // A second diagram joins the group a viewer is already in, as another tab, so the maximized
+    // group stays maximized; the first one opens beside the active editor.
+    const column = [...panels.values()].find(open => open.viewColumn !== undefined)?.viewColumn ?? vscode.ViewColumn.Beside
+    const panel = vscode.window.createWebviewPanel('mermaidViewer', title, column, {
       enableScripts: true,
       retainContextWhenHidden: true,
       localResourceRoots: [],

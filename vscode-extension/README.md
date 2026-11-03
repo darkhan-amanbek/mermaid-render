@@ -9,7 +9,7 @@ When it is installed, the mod's **⤢ View** button opens the diagram beside the
 ```bash
 cd vscode-extension
 npx -y @vscode/vsce package
-code --install-extension mermaid-viewer-0.3.0.vsix
+code --install-extension mermaid-viewer-0.4.0.vsix
 ```
 
 ## How it works

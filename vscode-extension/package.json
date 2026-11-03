@@ -2,7 +2,7 @@
   "name": "mermaid-viewer",
   "displayName": "Mermaid Viewer for Claude Code",
   "description": "Opens the diagram viewer pages that the mermaid-render Claude Code mod writes, as a webview tab inside VS Code: pinch-zoom, wheel zoom, drag, source, save.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "darkhan-amanbek",
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/darkhan-amanbek/mermaid-render" },
