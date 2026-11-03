@@ -1,13 +1,14 @@
 {
   "name": "mermaid-render",
-  "version": "0.1.1",
-  "description": "Draws mermaid fenced code blocks in assistant replies as diagrams: SVG on desktop, VS Code and mobile, box-drawing text in the terminal.",
-  "author": { "name": "ceyeoh", "url": "https://github.com/ceyeoh" },
-  "homepage": "https://github.com/ceyeoh/mermaid-render",
-  "repository": "https://github.com/ceyeoh/mermaid-render",
-  "documentationUrl": "https://github.com/ceyeoh/mermaid-render#readme",
-  "supportUrl": "https://github.com/ceyeoh/mermaid-render/issues",
-  "privacyPolicyUrl": "https://github.com/ceyeoh/mermaid-render#what-it-runs-and-sends",
+  "version": "0.2.0",
+  "description": "Draws mermaid fenced code blocks in assistant replies as diagrams with a zoom toolbar: SVG on desktop, VS Code and mobile, box-drawing text in the terminal.",
+  "author": { "name": "darkhan-amanbek", "url": "https://github.com/darkhan-amanbek" },
+  "homepage": "https://github.com/darkhan-amanbek/mermaid-render",
+  "repository": "https://github.com/darkhan-amanbek/mermaid-render",
+  "documentationUrl": "https://github.com/darkhan-amanbek/mermaid-render#readme",
+  "supportUrl": "https://github.com/darkhan-amanbek/mermaid-render/issues",
+  "privacyPolicyUrl": "https://github.com/darkhan-amanbek/mermaid-render#what-it-runs-and-sends",
   "license": "MIT",
-  "keywords": ["mermaid", "diagram", "render", "mod"]
+  "types": "./types/index.d.ts",
+  "keywords": ["mermaid", "diagram", "render", "zoom", "mod"]
 }

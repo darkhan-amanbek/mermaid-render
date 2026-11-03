@@ -1,17 +1,19 @@
 import type { On } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
+import { diagramId } from './view'
 
 const FLOW = 'graph TD\n  A --> B'
 const SEQUENCE = 'sequenceDiagram\n  A->>B: hi'
 const PIE = 'pie title Pets\n  "Dogs" : 3'
 const fence = (source: string) => '```mermaid\n' + source + '\n```'
-const svgOf = (source: string) => `<svg xmlns="http://www.w3.org/2000/svg"><title>${source.length}</title></svg>`
+const svgOf = (source: string) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><title>${source.length}</title></svg>`
 const asciiOf = (source: string) => `┌──┐\n│${source.split('\n')[0]}│\n└──┘`
 
-type Renderer = { renderCalls: string[][]; logs: string[] }
+type Renderer = { renderCalls: string[][]; logs: string[]; opened: string[][] }
 
-function fakeRenderer(on: On, { startable = ['node'], failFirstRender = false } = {}): Renderer {
-  const renderer: Renderer = { renderCalls: [], logs: [] }
+function fakeRenderer(on: On, { startable = ['node'], failFirstRender = false, openers = [] as string[] } = {}): Renderer {
+  const renderer: Renderer = { renderCalls: [], logs: [], opened: [] }
   on('ui.render', ($, e) => {
     const { Text } = $.ui.resolve(e)
     return <Text>engine</Text>
@@ -22,8 +24,12 @@ function fakeRenderer(on: On, { startable = ['node'], failFirstRender = false } 
   })
   on('process.run', (_, e) => {
     const [argv0 = '', script = ''] = e.argv
-    if (!startable.includes(argv0)) return { deny: `${argv0}: not found` }
     const ok = { exitCode: 0, stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
+    if (openers.includes(argv0)) {
+      renderer.opened.push([...e.argv])
+      return { value: { ...ok, stdout: '' } }
+    }
+    if (!startable.includes(argv0)) return { deny: `${argv0}: not found` }
     if (script === '--version') return { value: { ...ok, stdout: 'v26.0.0\n' } }
 
     const { format, sources } = JSON.parse(e.init?.stdin ?? '{}') as { format: string; sources: string[] }
@@ -45,12 +51,12 @@ const message = (text: string) => ({
   props: { text, isFirstOfReply: true },
 }) as const
 
-test('on svg surfaces, text then diagram then text draws Markdown, Svg, Markdown in order', async ($, on) => {
+test('on svg surfaces, text then diagram then text draws Markdown, diagram Box, Markdown in order', async ($, on) => {
   fakeRenderer(on)
   for (const surface of ['desktop', 'vscode', 'mobile'] as const) {
     const ui = await $.ui.mount({ ...message(`Here is the flow:\n\n${fence(FLOW)}\n\nThat is all.`), surface })
     const box = await ui.find({ type: 'Box' })
-    expect(box?.children.map(child => (child as { type: string }).type)).toEqual(['Markdown', 'Svg', 'Markdown'])
+    expect(box?.children.map(child => (child as { type: string }).type)).toEqual(['Markdown', 'Box', 'Markdown'])
 
     const svg = await ui.find({ type: 'Svg' })
     expect(svg?.props.source).toBe(svgOf(FLOW))
@@ -174,4 +180,91 @@ test('with no runtime at all, diagrams stay code and one debug line says why', a
   expect(renderer.renderCalls).toEqual([])
   expect(renderer.logs).toHaveLength(1)
   expect(renderer.logs[0]).toContain('no node or bun')
+})
+
+test('a diagram draws at its own size with a zoom toolbar under it', async ($, on) => {
+  fakeRenderer(on)
+  for (const surface of ['desktop', 'vscode'] as const) {
+    const ui = await $.ui.mount({ ...message(fence(FLOW)), surface })
+    const svg = await ui.find({ type: 'Svg' })
+    expect(svg?.props.width).toBe(300)
+    expect(svg?.props.height).toBe(200)
+    expect(await ui.find({ type: 'Text', text: '100%' })).toBeDefined()
+    for (const name of ['zoom-out', 'zoom-in', 'zoom-reset', 'zoom-fit', 'source', 'open']) {
+      expect(await ui.find({ type: 'Button', key: `${name}:${diagramId(FLOW)}:0` })).toBeDefined()
+    }
+    expect(await ui.find({ type: 'Code' })).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+test('pressing + and − scales the Svg, 1:1 restores it, Fit leaves the size to the surface', async ($, on) => {
+  fakeRenderer(on)
+  const id = diagramId(FLOW)
+  const ui = await $.ui.mount({ ...message(fence(FLOW)), surface: 'vscode' })
+  await ui.press({ key: `zoom-in:${id}:0` })
+  expect((await ui.find({ type: 'Svg' }))?.props.width).toBe(375)
+  expect(await ui.find({ type: 'Text', text: '125%' })).toBeDefined()
+  await ui.press({ key: `zoom-in:${id}:0` })
+  expect((await ui.find({ type: 'Svg' }))?.props.width).toBe(450)
+  await ui.press({ key: `zoom-out:${id}:0` })
+  expect((await ui.find({ type: 'Svg' }))?.props.width).toBe(375)
+  await ui.press({ key: `zoom-reset:${id}:0` })
+  expect((await ui.find({ type: 'Svg' }))?.props.width).toBe(300)
+  await ui.press({ key: `zoom-fit:${id}:0` })
+  expect((await ui.find({ type: 'Svg' }))?.props.width).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'fit' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the zoom of a diagram is remembered when the same diagram is drawn again', async ($, on) => {
+  fakeRenderer(on)
+  const id = diagramId(FLOW)
+  const first = await $.ui.mount({ ...message(fence(FLOW)), surface: 'desktop' })
+  await first.press({ key: `zoom-in:${id}:0` })
+  await first.unmount()
+  const second = await $.ui.mount({ ...message(`Again:\n${fence(FLOW)}`), surface: 'desktop' })
+  expect((await second.find({ type: 'Svg' }))?.props.width).toBe(375)
+  await second.unmount()
+})
+
+test('Source shows the mermaid text under the diagram and hides it again', async ($, on) => {
+  fakeRenderer(on)
+  const id = diagramId(SEQUENCE)
+  const ui = await $.ui.mount({ ...message(fence(SEQUENCE)), surface: 'vscode' })
+  await ui.press({ key: `source:${id}:0` })
+  const code = await ui.find({ type: 'Code' })
+  expect(code?.props.source).toBe(SEQUENCE)
+  expect(code?.props.language).toBe('mermaid')
+  expect(await ui.find({ type: 'Button', text: 'Hide source' })).toBeDefined()
+  await ui.press({ key: `source:${id}:0` })
+  expect(await ui.find({ type: 'Code' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('Open writes the SVG to a temp file and hands it to the first opener that starts', async ($, on) => {
+  const renderer = fakeRenderer(on, { openers: ['/opt/homebrew/bin/code'] })
+  const writes: { path: string; text: string }[] = []
+  on('env.get', () => ({ value: '/tmp/t/' }))
+  on('fs.write', (_, e) => {
+    writes.push({ path: e.path, text: e.text })
+    return { value: undefined }
+  })
+  const id = diagramId(FLOW)
+  const ui = await $.ui.mount({ ...message(fence(FLOW)), surface: 'vscode' })
+  await ui.press({ key: `open:${id}:0` })
+  expect(writes).toHaveLength(1)
+  expect(writes[0]?.path).toBe(`/tmp/t/mermaid-render/${id}.svg`)
+  expect(writes[0]?.text).toBe(svgOf(FLOW))
+  expect(renderer.opened).toEqual([['/opt/homebrew/bin/code', '--reuse-window', writes[0]?.path]])
+  await ui.unmount()
+})
+
+test('two different diagrams get their own toolbars and zoom independently', async ($, on) => {
+  fakeRenderer(on)
+  const ui = await $.ui.mount({ ...message(`${fence(FLOW)}\n${fence(SEQUENCE)}`), surface: 'desktop' })
+  await ui.press({ key: `zoom-in:${diagramId(SEQUENCE)}:1` })
+  const svgs = await ui.findAll({ type: 'Svg' })
+  expect(svgs.map(svg => svg.props.width)).toEqual([300, 375])
+  await ui.unmount()
 })

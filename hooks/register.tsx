@@ -1,9 +1,12 @@
+import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderElement, RenderInput, RenderSurface, RenderViewport } from 'claude-code'
 import { parseSegments, type Segment } from './segments'
+import { FIT, diagramId, sizeOf, zoomIn, zoomLabel, zoomOut, type Size } from './view'
+import type { View } from '../types'
 
 type Format = 'svg' | 'ascii'
 type Rendered = { ok: true; output: string } | { ok: false; reason: string }
-type Diagram = { kind: 'diagram'; output: string; alt: string }
+type Diagram = { kind: 'diagram'; id: string; index: number; source: string; output: string; alt: string; size: Size | undefined }
 type Block = { kind: 'markdown'; text: string } | Diagram
 
 const FORMAT_BY_SURFACE = {
@@ -26,6 +29,22 @@ const RENDERER = 'renderer/render.mjs'
 const RUNTIMES = ['node', '/opt/homebrew/bin/node', '/usr/local/bin/node', 'bun', '/opt/homebrew/bin/bun']
 const RENDER_TIMEOUT_MS = 20_000
 const CACHE_LIMIT = 256
+
+// What "Open" tries, in order: VS Code's CLI, then the OS's default opener.
+const OPENERS: readonly (readonly string[])[] = [
+  ['code', '--reuse-window'],
+  ['/opt/homebrew/bin/code', '--reuse-window'],
+  ['/usr/local/bin/code', '--reuse-window'],
+  ['open'],
+  ['xdg-open'],
+]
+const OPEN_TIMEOUT_MS = 10_000
+
+const DEFAULT_VIEW: View = { zoom: 1, showSource: false }
+
+// Per-diagram view state, keyed by the diagram's id, kept for the session so a
+// zoomed diagram stays zoomed across redraws and reloads of this module.
+const views = atom({ plugin: 'mermaid-render', key: 'views' } as const, {}, { shape: 'views-1' })
 
 const cache = new Map<string, Promise<Rendered>>()
 let runtime: Promise<string | undefined> | undefined
@@ -120,10 +139,19 @@ function toBlocks(segments: Segment[], rendered: Rendered[]): Block[] {
       pushMarkdown(segment.text)
       continue
     }
-    const result = rendered[diagramIndex++]
+    const index = diagramIndex++
+    const result = rendered[index]
     if (result?.ok === true) {
       const alt = segment.source.trim().split('\n')[0]?.trim() || 'mermaid diagram'
-      blocks.push({ kind: 'diagram', output: result.output, alt })
+      blocks.push({
+        kind: 'diagram',
+        id: diagramId(segment.source),
+        index,
+        source: segment.source,
+        output: result.output,
+        alt,
+        size: sizeOf(result.output),
+      })
     } else {
       pushMarkdown(segment.fence)
     }
@@ -144,22 +172,72 @@ export const register: Register = on => {
     const blocks = toBlocks(segments, (await renderAll($, format, sources)).map(fitting))
     if (blocks.every(block => block.kind === 'markdown')) return next(e)
 
-    return drawBlocks($, e, blocks)
+    const viewed = e.surface === 'terminal' ? {} : await read($, views)
+    return drawBlocks($, e, blocks, viewed)
   }).catch(($, e, next) => next(e))
 }
 
-function diagramDrawer($: EngineInterface, e: RenderInput<'AssistantMessage'>): (diagram: Diagram) => RenderElement {
+async function setView($: EngineInterface, id: string, change: (view: View) => View): Promise<void> {
+  await update($, views, all => ({ ...all, [id]: change(all[id] ?? DEFAULT_VIEW) }))
+}
+
+// Writes the SVG to a temp file and hands it to VS Code, or to the OS's opener.
+async function openOutside($: EngineInterface, diagram: Diagram): Promise<void> {
+  const tmp = ((await $.env.get('TMPDIR')) ?? '/tmp').replace(/[\\/]+$/, '')
+  const path = `${tmp}/mermaid-render/${diagram.id}.svg`
+  await $.fs.write(path, diagram.output)
+  for (const opener of OPENERS) {
+    try {
+      const { exitCode } = await $.process.run([...opener, path], { timeoutMs: OPEN_TIMEOUT_MS })
+      if (exitCode === 0) return
+    } catch {}
+  }
+  $.ui.toast(`Diagram saved to ${path}`)
+}
+
+function diagramDrawer(
+  $: EngineInterface,
+  e: RenderInput<'AssistantMessage'>,
+  viewed: Record<string, View>,
+): (diagram: Diagram) => RenderElement {
   if (e.surface === 'terminal') {
     const { Code } = $.ui.resolve(e)
     return ({ output }) => <Code source={output} wrap="truncate-end" />
   }
-  const { Svg } = $.ui.resolve(e)
-  return ({ output, alt }) => <Svg source={output} alt={alt} />
+  const { Box, Text, Button, Svg, Code } = $.ui.resolve(e)
+  return diagram => {
+    const { id, index, output, alt, size, source } = diagram
+    const view = viewed[id] ?? DEFAULT_VIEW
+    const key = (name: string) => `${name}:${id}:${index}`
+    const scaled = view.zoom !== FIT && size !== undefined ? { width: size.width * view.zoom, height: size.height * view.zoom } : {}
+    return (
+      <Box flexDirection="column">
+        <Svg source={output} alt={alt} isInteractive={e.surface === 'desktop'} {...scaled} />
+        <Box flexDirection="row" gap={1} flexWrap="wrap">
+          <Button key={key('zoom-out')} onPress={() => setView($, id, v => ({ ...v, zoom: zoomOut(v.zoom) }))}>−</Button>
+          <Text dimColor>{zoomLabel(view.zoom)}</Text>
+          <Button key={key('zoom-in')} onPress={() => setView($, id, v => ({ ...v, zoom: zoomIn(v.zoom) }))}>+</Button>
+          <Button key={key('zoom-reset')} onPress={() => setView($, id, v => ({ ...v, zoom: 1 }))}>1:1</Button>
+          <Button key={key('zoom-fit')} onPress={() => setView($, id, v => ({ ...v, zoom: FIT }))}>Fit</Button>
+          <Button key={key('source')} onPress={() => setView($, id, v => ({ ...v, showSource: !v.showSource }))}>
+            {view.showSource ? 'Hide source' : 'Source'}
+          </Button>
+          <Button key={key('open')} onPress={() => openOutside($, diagram)}>Open</Button>
+        </Box>
+        {view.showSource && <Code source={source} language="mermaid" />}
+      </Box>
+    )
+  }
 }
 
-function drawBlocks($: EngineInterface, e: RenderInput<'AssistantMessage'>, blocks: Block[]): RenderElement {
+function drawBlocks(
+  $: EngineInterface,
+  e: RenderInput<'AssistantMessage'>,
+  blocks: Block[],
+  viewed: Record<string, View>,
+): RenderElement {
   const { Box, Markdown } = $.ui.resolve(e)
-  const drawDiagram = diagramDrawer($, e)
+  const drawDiagram = diagramDrawer($, e, viewed)
   const body = (
     <Box flexDirection="column" gap={1}>
       {blocks.map(block => (block.kind === 'markdown' ? <Markdown text={block.text} /> : drawDiagram(block)))}
