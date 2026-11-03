@@ -1,6 +1,6 @@
 {
   "name": "mermaid-render",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Draws mermaid fenced code blocks in assistant replies as diagrams, with a browser viewer for zoom: SVG on desktop, VS Code and mobile, box-drawing text in the terminal.",
   "author": { "name": "darkhan-amanbek", "url": "https://github.com/darkhan-amanbek" },
   "homepage": "https://github.com/darkhan-amanbek/mermaid-render",

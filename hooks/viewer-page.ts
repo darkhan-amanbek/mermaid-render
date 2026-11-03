@@ -6,27 +6,51 @@ const escapeHtml = (text: string) =>
   text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
 
 const STYLE = `
-  :root { color-scheme: light dark; --bg: #ffffff; --fg: #27272a; --bar: rgba(255,255,255,.92); --line: #e4e4e7; --btn: #f4f4f5; --btn-h: #e4e4e7; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #1f1f1e; --fg: #e8e6e3; --bar: rgba(31,31,30,.92); --line: #3f3f46; --btn: #2a2a29; --btn-h: #3a3a39; } }
-  /* Inside a VS Code webview the theme comes as a class on body, not as prefers-color-scheme. */
-  body.vscode-light { --bg: #ffffff; --fg: #27272a; --bar: rgba(255,255,255,.92); --line: #e4e4e7; --btn: #f4f4f5; --btn-h: #e4e4e7; }
-  body.vscode-dark, body.vscode-high-contrast { --bg: #1f1f1e; --fg: #e8e6e3; --bar: rgba(31,31,30,.92); --line: #3f3f46; --btn: #2a2a29; --btn-h: #3a3a39; }
-  body.vscode-light #canvas svg { --bg: #ffffff; --fg: #27272a; }
-  body.vscode-dark #canvas svg, body.vscode-high-contrast #canvas svg { --bg: #1f1f1e; --fg: #e8e6e3; }
+  /* Inside a VS Code webview the theme arrives as --vscode-* variables, which the page follows:
+     editor colors, the button colors, the UI and editor fonts. In a browser those are unset and
+     the fallbacks apply, light or dark after the system. */
+  :root {
+    color-scheme: light dark;
+    --page-bg: var(--vscode-editor-background, #ffffff);
+    --page-fg: var(--vscode-editor-foreground, #27272a);
+    --dim: var(--vscode-descriptionForeground, #71717a);
+    --bar: var(--vscode-editorWidget-background, #fafafa);
+    --line: var(--vscode-widget-border, var(--vscode-panel-border, #e4e4e7));
+    --btn: var(--vscode-button-secondaryBackground, #f4f4f5);
+    --btn-fg: var(--vscode-button-secondaryForeground, #27272a);
+    --btn-h: var(--vscode-button-secondaryHoverBackground, #e4e4e7);
+    --focus: var(--vscode-focusBorder, #3b82f6);
+    --font: var(--vscode-font-family, system-ui, -apple-system, sans-serif);
+    --font-size: var(--vscode-font-size, 13px);
+    --mono: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, monospace);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page-bg: var(--vscode-editor-background, #1f1f1e);
+      --page-fg: var(--vscode-editor-foreground, #e8e6e3);
+      --dim: var(--vscode-descriptionForeground, #a1a1aa);
+      --bar: var(--vscode-editorWidget-background, #262625);
+      --line: var(--vscode-widget-border, var(--vscode-panel-border, #3f3f46));
+      --btn: var(--vscode-button-secondaryBackground, #2a2a29);
+      --btn-fg: var(--vscode-button-secondaryForeground, #e8e6e3);
+      --btn-h: var(--vscode-button-secondaryHoverBackground, #3a3a39);
+    }
+  }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font: 13px/1.4 system-ui, -apple-system, sans-serif; }
-  #bar { position: fixed; top: 0; left: 0; right: 0; display: flex; gap: 6px; align-items: center; padding: 8px 12px; background: var(--bar); border-bottom: 1px solid var(--line); backdrop-filter: blur(6px); z-index: 2; flex-wrap: wrap; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--page-bg); color: var(--page-fg); font: var(--font-size)/1.4 var(--font); }
+  #bar { position: fixed; top: 0; left: 0; right: 0; display: flex; gap: 6px; align-items: center; padding: 8px 12px; background: var(--bar); border-bottom: 1px solid var(--line); z-index: 2; flex-wrap: wrap; }
   #bar b { margin-right: auto; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40vw; }
-  button { font: inherit; color: inherit; background: var(--btn); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  button { font: inherit; color: var(--btn-fg); background: var(--btn); border: 1px solid transparent; border-radius: 4px; padding: 4px 10px; cursor: pointer; }
   button:hover { background: var(--btn-h); }
-  #zoom { min-width: 4.5em; text-align: center; font-variant-numeric: tabular-nums; }
+  button:focus-visible { outline: 1px solid var(--focus); outline-offset: 1px; }
+  #zoom { min-width: 4.5em; text-align: center; font-variant-numeric: tabular-nums; color: var(--dim); }
   #stage { position: absolute; inset: 0; cursor: grab; touch-action: none; overflow: hidden; }
   #stage.dragging { cursor: grabbing; }
   #canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
-  #canvas svg { display: block; }
-  #source { position: fixed; left: 0; right: 0; bottom: 0; max-height: 40vh; overflow: auto; margin: 0; padding: 12px 16px; background: var(--bar); border-top: 1px solid var(--line); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; display: none; z-index: 2; }
+  #canvas svg { display: block; --bg: var(--page-bg); --fg: var(--page-fg); }
+  #source { position: fixed; left: 0; right: 0; bottom: 0; max-height: 40vh; overflow: auto; margin: 0; padding: 12px 16px; background: var(--bar); border-top: 1px solid var(--line); font: 12px/1.5 var(--mono); white-space: pre; display: none; z-index: 2; }
   #source.shown { display: block; }
-  #hint { position: fixed; right: 12px; bottom: 10px; opacity: .55; font-size: 12px; pointer-events: none; z-index: 1; }
+  #hint { position: fixed; right: 12px; bottom: 10px; color: var(--dim); font-size: 12px; pointer-events: none; z-index: 1; }
 `
 
 const SCRIPT = `

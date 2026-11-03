@@ -14,7 +14,7 @@ Under each drawn diagram there is one small button, **⛶** (as VS Code marks "m
 - a trackpad **pinch**, or **⌘ / Ctrl + scroll**, zooms around the pointer; a two-finger **scroll** or a **drag** pans;
 - **−** / **+**, **1:1** and **Fit** on the toolbar, and the keys `-`, `+`, `1`, `0`; a **double-click** toggles between fit and natural size;
 - **Source** (key `s`) shows the mermaid text, **Copy** copies it, **Download** saves the SVG;
-- the page follows the light or dark color scheme of the system.
+- inside VS Code the page takes the editor's colors, button colors and fonts from the current theme; in a browser it follows the system's light or dark scheme.
 
 ### Inside VS Code
 
